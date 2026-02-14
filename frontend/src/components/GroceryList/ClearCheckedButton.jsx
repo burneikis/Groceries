@@ -4,6 +4,7 @@ export default function ClearCheckedButton({ count }) {
   const deleteCheckedItems = useStore((s) => s.deleteCheckedItems)
 
   const handleClear = async () => {
+    if (!window.confirm(`Clear ${count} checked item${count === 1 ? '' : 's'}?`)) return
     try {
       await deleteCheckedItems()
     } catch (err) {

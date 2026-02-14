@@ -29,6 +29,7 @@ export default function ItemRow({ item }) {
   }
 
   const handleDelete = () => {
+    if (!window.confirm(`Delete "${item.name}"?`)) return
     deleteItem(item.id)
   }
 
