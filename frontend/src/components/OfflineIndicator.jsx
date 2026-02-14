@@ -7,7 +7,7 @@ export default function OfflineIndicator() {
   if (isOnline && pendingSyncs === 0) return null
 
   return (
-    <div className={`fixed top-0 left-0 right-0 z-50 px-4 py-2 text-center text-sm font-medium ${
+    <div className={`fixed top-0 left-0 right-0 z-50 px-4 py-2 text-center text-sm font-medium animate-slide-down ${
       isOnline
         ? 'bg-amber-100 text-amber-800'
         : 'bg-gray-700 text-white'

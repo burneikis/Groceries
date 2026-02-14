@@ -38,7 +38,7 @@ export default function GroceryListView() {
 
       <AddItemForm />
 
-      <div className="mt-4 space-y-3">
+      <div className="mt-4 space-y-3 animate-fade-in">
         {uncategorized.length > 0 && (
           <CategorySection
             category={{ id: null, name: 'Uncategorized' }}

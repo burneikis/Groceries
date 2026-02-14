@@ -136,41 +136,45 @@ export default function RecipeEditorView() {
 
           <div className="space-y-2">
             {ingredients.map((ing, index) => (
-              <div key={index} className="flex gap-2 items-center bg-white rounded-xl border border-gray-100 p-3">
-                <input
-                  type="text"
-                  value={ing.name}
-                  onChange={(e) => updateIngredient(index, 'name', e.target.value)}
-                  placeholder="Ingredient name"
-                  className="flex-1 px-2 py-1.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                />
-                <input
-                  type="text"
-                  value={ing.amount}
-                  onChange={(e) => updateIngredient(index, 'amount', e.target.value)}
-                  placeholder="Qty"
-                  className="w-20 px-2 py-1.5 rounded-lg border border-gray-200 text-sm text-center focus:outline-none focus:ring-2 focus:ring-amber-400"
-                />
-                <select
-                  value={ing.category_id}
-                  onChange={(e) =>
-                    updateIngredient(index, 'category_id', e.target.value ? Number(e.target.value) : '')
-                  }
-                  className="w-28 px-2 py-1.5 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
-                >
-                  <option value="">Category</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-                <button
-                  onClick={() => removeIngredient(index)}
-                  className="p-1 text-gray-300 hover:text-red-400 transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-                  </svg>
-                </button>
+              <div key={index} className="bg-white rounded-xl border border-gray-100 p-3 space-y-2">
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    value={ing.name}
+                    onChange={(e) => updateIngredient(index, 'name', e.target.value)}
+                    placeholder="Ingredient name"
+                    className="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                  <button
+                    onClick={() => removeIngredient(index)}
+                    className="p-1 text-gray-300 hover:text-red-400 active:text-red-400 transition-colors flex-shrink-0"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={ing.amount}
+                    onChange={(e) => updateIngredient(index, 'amount', e.target.value)}
+                    placeholder="Qty"
+                    className="w-20 px-2 py-1.5 rounded-lg border border-gray-200 text-sm text-center focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                  <select
+                    value={ing.category_id}
+                    onChange={(e) =>
+                      updateIngredient(index, 'category_id', e.target.value ? Number(e.target.value) : '')
+                    }
+                    className="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  >
+                    <option value="">Category</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             ))}
           </div>

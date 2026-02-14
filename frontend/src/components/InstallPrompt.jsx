@@ -24,7 +24,7 @@ export default function InstallPrompt() {
   }
 
   return (
-    <div className="fixed bottom-20 left-4 right-4 z-40 max-w-lg mx-auto bg-white rounded-xl shadow-lg border border-gray-200 p-4 flex items-center gap-3">
+    <div className="fixed bottom-20 left-4 right-4 z-40 max-w-lg mx-auto bg-white rounded-xl shadow-lg border border-gray-200 p-4 flex items-center gap-3 animate-slide-up">
       <div className="flex-1">
         <p className="text-sm font-medium text-gray-900">Install Groceries</p>
         <p className="text-xs text-gray-500">Add to home screen for quick access</p>
