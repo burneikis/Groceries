@@ -77,7 +77,7 @@ export default function CategoryRow({ category }) {
               setEditing(false)
             }
           }}
-          className="flex-1 px-2 py-1 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+          className="flex-1 px-2 py-1 rounded-lg border border-gray-200 text-base focus:outline-none focus:ring-2 focus:ring-amber-400"
           autoFocus
         />
       ) : (

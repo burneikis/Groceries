@@ -39,7 +39,7 @@ export default function ItemRow({ item }) {
           type="text"
           value={editName}
           onChange={(e) => setEditName(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-base focus:outline-none focus:ring-2 focus:ring-amber-400"
           autoFocus
         />
         <div className="flex gap-2">
@@ -48,12 +48,12 @@ export default function ItemRow({ item }) {
             value={editAmount}
             onChange={(e) => setEditAmount(e.target.value)}
             placeholder="Qty"
-            className="w-24 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+            className="w-24 px-3 py-2 rounded-lg border border-gray-200 text-base focus:outline-none focus:ring-2 focus:ring-amber-400"
           />
           <select
             value={editCategory}
             onChange={(e) => setEditCategory(e.target.value ? Number(e.target.value) : '')}
-            className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+            className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-base bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
           >
             <option value="">No category</option>
             {categories.map((c) => (

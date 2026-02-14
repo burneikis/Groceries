@@ -143,7 +143,7 @@ export default function RecipeEditorView() {
                     value={ing.name}
                     onChange={(e) => updateIngredient(index, 'name', e.target.value)}
                     placeholder="Ingredient name"
-                    className="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    className="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-gray-200 text-base focus:outline-none focus:ring-2 focus:ring-amber-400"
                   />
                   <button
                     onClick={() => removeIngredient(index)}
@@ -160,14 +160,14 @@ export default function RecipeEditorView() {
                     value={ing.amount}
                     onChange={(e) => updateIngredient(index, 'amount', e.target.value)}
                     placeholder="Qty"
-                    className="w-20 px-2 py-1.5 rounded-lg border border-gray-200 text-sm text-center focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    className="w-20 px-2 py-1.5 rounded-lg border border-gray-200 text-base text-center focus:outline-none focus:ring-2 focus:ring-amber-400"
                   />
                   <select
                     value={ing.category_id}
                     onChange={(e) =>
                       updateIngredient(index, 'category_id', e.target.value ? Number(e.target.value) : '')
                     }
-                    className="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    className="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-gray-200 text-base bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
                   >
                     <option value="">Category</option>
                     {categories.map((c) => (

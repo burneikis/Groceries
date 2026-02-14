@@ -56,7 +56,7 @@ export default function CategoryManager() {
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           placeholder="New category name..."
-          className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+          className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-base focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
         />
         <button
           type="submit"

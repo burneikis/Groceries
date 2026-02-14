@@ -1,4 +1,3 @@
-- safari zoom on edit fields prevention
 - checked items stay inplace
 - Dark mode
 - Frequently bought items quick-add
