@@ -147,21 +147,15 @@ router.delete('/:id', (req, res) => {
     const { id } = req.params;
     const db = getDatabase();
 
-    // Check if category has items
-    const itemCount = db
-      .prepare('SELECT COUNT(*) as count FROM items WHERE category_id = ?')
-      .get(id);
+    // Remove foreign key references before deleting
+    const deleteCategory = db.transaction(() => {
+      db.prepare('UPDATE items SET category_id = NULL WHERE category_id = ?').run(id);
+      db.prepare('UPDATE recipe_ingredients SET category_id = NULL WHERE category_id = ?').run(id);
+      db.prepare('DELETE FROM item_category_mappings WHERE category_id = ?').run(id);
+      return db.prepare('DELETE FROM categories WHERE id = ?').run(id);
+    });
 
-    if (itemCount.count > 0) {
-      return res.status(409).json({
-        error: 'Cannot delete category with items',
-        itemCount: itemCount.count
-      });
-    }
-
-    const result = db
-      .prepare('DELETE FROM categories WHERE id = ?')
-      .run(id);
+    const result = deleteCategory(id);
 
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Category not found' });
