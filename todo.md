@@ -1,5 +1,5 @@
+- fix centering of nav and title
 - confirmation dialogue on deleting items and clearing items
-- live update
 - Frequently bought items quick-add
 - Shopping history/analytics
 - Price tracking
