@@ -1,0 +1,70 @@
+import { useState } from 'react'
+import useStore from '../../store/useStore'
+
+export default function AddItemForm() {
+  const [name, setName] = useState('')
+  const [amount, setAmount] = useState('')
+  const [showAmount, setShowAmount] = useState(false)
+  const createItem = useStore((s) => s.createItem)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    const trimmed = name.trim()
+    if (!trimmed) return
+
+    try {
+      await createItem({
+        name: trimmed,
+        amount: amount.trim() || undefined,
+      })
+      setName('')
+      setAmount('')
+      setShowAmount(false)
+    } catch (err) {
+      console.error('Failed to add item:', err)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex gap-2 items-end">
+      <div className="flex-1">
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Add an item..."
+          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-base focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+        />
+      </div>
+
+      {showAmount ? (
+        <input
+          type="text"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="Qty"
+          className="w-20 px-3 py-3 rounded-xl border border-gray-200 bg-white text-base text-center focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowAmount(true)}
+          className="px-3 py-3 rounded-xl border border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-colors"
+          title="Add quantity"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+        </button>
+      )}
+
+      <button
+        type="submit"
+        disabled={!name.trim()}
+        className="px-5 py-3 rounded-xl bg-amber-500 text-white font-semibold text-base hover:bg-amber-600 active:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      >
+        Add
+      </button>
+    </form>
+  )
+}
