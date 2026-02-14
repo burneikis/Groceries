@@ -1,3 +1,4 @@
+- confirmation dialogue on deleting items and clearing items
 - live update
 - Frequently bought items quick-add
 - Shopping history/analytics

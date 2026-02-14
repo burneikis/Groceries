@@ -3,6 +3,7 @@ import { categoriesApi, itemsApi, recipesApi } from '../services/api';
 import * as db from '../services/db';
 import { addToSyncQueue } from '../services/db';
 import { processQueue, startSyncListener } from '../services/sync';
+import LiveUpdatesService from '../services/liveUpdates';
 
 function isOfflineError(err) {
   return !navigator.onLine || err.message === 'Failed to fetch' || err.name === 'TypeError';
@@ -19,6 +20,8 @@ const useStore = create((set, get) => ({
   pendingSyncs: 0,
   theme: 'system', // 'light' | 'dark' | 'system'
   resolvedTheme: 'light', // actual theme being applied
+  ownChangeIds: new Set(), // Track our own changes to prevent echo
+  liveUpdatesConnected: false, // SSE connection status
 
   // Helper to update pending syncs count
   updatePendingSyncs: async () => {
@@ -113,6 +116,140 @@ const useStore = create((set, get) => ({
     };
   },
 
+  // Live Updates (SSE)
+  generateChangeId: () => {
+    return `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+  },
+
+  trackOwnChange: (changeId) => {
+    if (!changeId) return;
+    const { ownChangeIds } = get();
+    ownChangeIds.add(changeId);
+    set({ ownChangeIds: new Set(ownChangeIds) });
+
+    // Auto-expire after 5 seconds
+    setTimeout(() => {
+      const { ownChangeIds } = get();
+      ownChangeIds.delete(changeId);
+      set({ ownChangeIds: new Set(ownChangeIds) });
+    }, 5000);
+  },
+
+  handleRemoteChange: async (event) => {
+    const { type, data, changeId } = event;
+
+    // Ignore our own changes (echo prevention)
+    if (changeId && get().ownChangeIds.has(changeId)) {
+      console.log('[LiveUpdates] Ignoring own change:', type, changeId);
+      return;
+    }
+
+    console.log('[LiveUpdates] Processing remote change:', type);
+
+    try {
+      switch (type) {
+        // Item events
+        case 'item-created': {
+          set((s) => ({ items: [...s.items, data] }));
+          await db.saveItem(data);
+          break;
+        }
+
+        case 'item-updated': {
+          set((s) => ({
+            items: s.items.map((i) => (i.id === data.id ? data : i)),
+          }));
+          await db.saveItem(data);
+          break;
+        }
+
+        case 'item-deleted': {
+          set((s) => ({ items: s.items.filter((i) => i.id !== data.id) }));
+          await db.deleteItemLocal(data.id);
+          break;
+        }
+
+        case 'items-deleted-checked': {
+          set((s) => ({ items: s.items.filter((i) => !i.checked) }));
+          await db.deleteCheckedItemsLocal();
+          break;
+        }
+
+        // Category events
+        case 'category-created': {
+          set((s) => ({ categories: [...s.categories, data] }));
+          await db.saveCategories([...get().categories]);
+          break;
+        }
+
+        case 'category-updated': {
+          set((s) => ({
+            categories: s.categories.map((c) => (c.id === data.id ? data : c)),
+          }));
+          await db.saveCategories(get().categories);
+          break;
+        }
+
+        case 'categories-reordered': {
+          set({ categories: data });
+          await db.saveCategories(data);
+          break;
+        }
+
+        case 'category-deleted': {
+          set((s) => ({ categories: s.categories.filter((c) => c.id !== data.id) }));
+          await db.saveCategories(get().categories);
+          break;
+        }
+
+        // Recipe events
+        case 'recipe-created': {
+          set((s) => ({ recipes: [...s.recipes, data] }));
+          await db.saveRecipe(data);
+          break;
+        }
+
+        case 'recipe-updated': {
+          set((s) => ({
+            recipes: s.recipes.map((r) => (r.id === data.id ? data : r)),
+          }));
+          await db.saveRecipe(data);
+          break;
+        }
+
+        case 'recipe-deleted': {
+          set((s) => ({ recipes: s.recipes.filter((r) => r.id !== data.id) }));
+          await db.deleteRecipeLocal(data.id);
+          break;
+        }
+
+        default:
+          console.warn('[LiveUpdates] Unknown event type:', type);
+      }
+    } catch (error) {
+      console.error('[LiveUpdates] Error processing remote change:', error);
+    }
+  },
+
+  initLiveUpdates: () => {
+    const liveUpdates = new LiveUpdatesService();
+    // Use window.location.origin in production, or VITE_API_URL in development
+    // This ensures SSE works from any device (phone, tablet, etc.)
+    const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+    const sseUrl = `${apiUrl}/api/events`;
+
+    liveUpdates.connect(
+      sseUrl,
+      get().handleRemoteChange,
+      (connected) => set({ liveUpdatesConnected: connected })
+    );
+
+    // Return cleanup function
+    return () => {
+      liveUpdates.disconnect();
+    };
+  },
+
   // Categories
   fetchCategories: async () => {
     set((s) => ({ loading: { ...s.loading, categories: true } }));
@@ -131,8 +268,10 @@ const useStore = create((set, get) => ({
   },
 
   createCategory: async (name) => {
+    const changeId = get().generateChangeId();
+    get().trackOwnChange(changeId); // Track BEFORE API call
     try {
-      const category = await categoriesApi.create(name);
+      const category = await categoriesApi.create(name, changeId);
       await db.saveCategories([...get().categories, category]);
       set((s) => ({ categories: [...s.categories, category] }));
       return category;
@@ -151,8 +290,10 @@ const useStore = create((set, get) => ({
   },
 
   updateCategory: async (id, name) => {
+    const changeId = get().generateChangeId();
+    get().trackOwnChange(changeId); // Track BEFORE API call
     try {
-      const updated = await categoriesApi.update(id, name);
+      const updated = await categoriesApi.update(id, name, changeId);
       set((s) => ({
         categories: s.categories.map((c) => (c.id === id ? updated : c)),
       }));
@@ -172,8 +313,10 @@ const useStore = create((set, get) => ({
   },
 
   deleteCategory: async (id) => {
+    const changeId = get().generateChangeId();
+    get().trackOwnChange(changeId); // Track BEFORE API call
     try {
-      await categoriesApi.delete(id);
+      await categoriesApi.delete(id, changeId);
       set((s) => ({
         categories: s.categories.filter((c) => c.id !== id),
       }));
@@ -194,13 +337,15 @@ const useStore = create((set, get) => ({
 
   reorderCategories: async (reordered) => {
     const updates = reordered.map((cat, i) => ({ id: cat.id, sort_order: i + 1 }));
+    const changeId = get().generateChangeId();
+    get().trackOwnChange(changeId); // Track BEFORE API call
     // Optimistic update
     const optimistic = reordered.map((cat, i) => ({ ...cat, sort_order: i + 1 }));
     set({ categories: optimistic });
     await db.saveCategories(optimistic);
 
     try {
-      const categories = await categoriesApi.reorder(updates);
+      const categories = await categoriesApi.reorder(updates, changeId);
       set({ categories });
       await db.saveCategories(categories);
     } catch (error) {
@@ -231,8 +376,10 @@ const useStore = create((set, get) => ({
   },
 
   createItem: async (item) => {
+    const changeId = get().generateChangeId();
+    get().trackOwnChange(changeId); // Track BEFORE API call to prevent race condition
     try {
-      const newItem = await itemsApi.create(item);
+      const newItem = await itemsApi.create(item, changeId);
       set((s) => ({ items: [...s.items, newItem] }));
       await db.saveItem(newItem);
       return newItem;
@@ -256,8 +403,10 @@ const useStore = create((set, get) => ({
   },
 
   updateItem: async (id, item) => {
+    const changeId = get().generateChangeId();
+    get().trackOwnChange(changeId); // Track BEFORE API call
     try {
-      const updated = await itemsApi.update(id, item);
+      const updated = await itemsApi.update(id, item, changeId);
       set((s) => ({
         items: s.items.map((i) => (i.id === id ? updated : i)),
       }));
@@ -278,6 +427,8 @@ const useStore = create((set, get) => ({
   },
 
   toggleItemCheck: async (id, checked) => {
+    const changeId = get().generateChangeId();
+    get().trackOwnChange(changeId); // Track BEFORE API call
     // Optimistic update
     set((s) => ({
       items: s.items.map((i) => (i.id === id ? { ...i, checked: checked ? 1 : 0 } : i)),
@@ -286,7 +437,7 @@ const useStore = create((set, get) => ({
     if (updatedItem) await db.saveItem(updatedItem);
 
     try {
-      await itemsApi.toggleCheck(id, checked);
+      await itemsApi.toggleCheck(id, checked, changeId);
     } catch (error) {
       if (isOfflineError(error)) {
         await addToSyncQueue({ action: 'items.toggleCheck', data: { id, checked } });
@@ -303,8 +454,10 @@ const useStore = create((set, get) => ({
   },
 
   deleteItem: async (id) => {
+    const changeId = get().generateChangeId();
+    get().trackOwnChange(changeId); // Track BEFORE API call
     try {
-      await itemsApi.delete(id);
+      await itemsApi.delete(id, changeId);
       set((s) => ({ items: s.items.filter((i) => i.id !== id) }));
       await db.deleteItemLocal(id);
     } catch (error) {
@@ -320,12 +473,14 @@ const useStore = create((set, get) => ({
   },
 
   deleteCheckedItems: async () => {
+    const changeId = get().generateChangeId();
+    get().trackOwnChange(changeId); // Track BEFORE API call
     const checkedIds = get().items.filter((i) => i.checked).map((i) => i.id);
     set((s) => ({ items: s.items.filter((i) => !i.checked) }));
     await db.deleteCheckedItemsLocal();
 
     try {
-      await itemsApi.deleteChecked();
+      await itemsApi.deleteChecked(changeId);
     } catch (error) {
       if (isOfflineError(error)) {
         await addToSyncQueue({ action: 'items.deleteChecked', data: { ids: checkedIds } });
@@ -354,8 +509,10 @@ const useStore = create((set, get) => ({
   },
 
   createRecipe: async (recipe) => {
+    const changeId = get().generateChangeId();
+    get().trackOwnChange(changeId); // Track BEFORE API call
     try {
-      const newRecipe = await recipesApi.create(recipe);
+      const newRecipe = await recipesApi.create(recipe, changeId);
       set((s) => ({ recipes: [...s.recipes, newRecipe] }));
       await db.saveRecipe(newRecipe);
       return newRecipe;
@@ -377,8 +534,10 @@ const useStore = create((set, get) => ({
   },
 
   updateRecipe: async (id, recipe) => {
+    const changeId = get().generateChangeId();
+    get().trackOwnChange(changeId); // Track BEFORE API call
     try {
-      const updated = await recipesApi.update(id, recipe);
+      const updated = await recipesApi.update(id, recipe, changeId);
       set((s) => ({
         recipes: s.recipes.map((r) => (r.id === id ? updated : r)),
       }));
@@ -399,8 +558,10 @@ const useStore = create((set, get) => ({
   },
 
   deleteRecipe: async (id) => {
+    const changeId = get().generateChangeId();
+    get().trackOwnChange(changeId); // Track BEFORE API call
     try {
-      await recipesApi.delete(id);
+      await recipesApi.delete(id, changeId);
       set((s) => ({ recipes: s.recipes.filter((r) => r.id !== id) }));
       await db.deleteRecipeLocal(id);
     } catch (error) {
@@ -416,8 +577,10 @@ const useStore = create((set, get) => ({
   },
 
   addRecipeToList: async (id) => {
+    const changeId = get().generateChangeId();
+    get().trackOwnChange(changeId); // Track BEFORE API call
     try {
-      const result = await recipesApi.addToList(id);
+      const result = await recipesApi.addToList(id, changeId);
       set((s) => ({ items: [...s.items, ...result.items] }));
       for (const item of result.items) {
         await db.saveItem(item);

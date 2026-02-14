@@ -1,5 +1,6 @@
 import express from 'express';
 import { getDatabase } from '../db/database.js';
+import eventEmitter from '../services/events.js';
 
 const router = express.Router();
 
@@ -27,7 +28,7 @@ router.get('/', (req, res) => {
  */
 router.post('/', (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, changeId } = req.body;
 
     if (!name || name.trim().length === 0) {
       return res.status(400).json({ error: 'Category name is required' });
@@ -49,6 +50,9 @@ router.post('/', (req, res) => {
       .prepare('SELECT * FROM categories WHERE id = ?')
       .get(result.lastInsertRowid);
 
+    // Emit event for real-time updates
+    eventEmitter.emitChange('category-created', newCategory, changeId);
+
     res.status(201).json(newCategory);
   } catch (error) {
     console.error('Error creating category:', error);
@@ -68,7 +72,7 @@ router.post('/', (req, res) => {
  */
 router.put('/reorder', (req, res) => {
   try {
-    const categories = req.body;
+    const { categories, changeId } = req.body;
 
     if (!Array.isArray(categories)) {
       return res.status(400).json({ error: 'Request body must be an array' });
@@ -94,6 +98,9 @@ router.put('/reorder', (req, res) => {
       .prepare('SELECT * FROM categories ORDER BY sort_order ASC')
       .all();
 
+    // Emit event for real-time updates
+    eventEmitter.emitChange('categories-reordered', updated, changeId);
+
     res.json(updated);
   } catch (error) {
     console.error('Error reordering categories:', error);
@@ -108,7 +115,7 @@ router.put('/reorder', (req, res) => {
 router.put('/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const { name } = req.body;
+    const { name, changeId } = req.body;
 
     if (!name || name.trim().length === 0) {
       return res.status(400).json({ error: 'Category name is required' });
@@ -126,6 +133,9 @@ router.put('/:id', (req, res) => {
     const updatedCategory = db
       .prepare('SELECT * FROM categories WHERE id = ?')
       .get(id);
+
+    // Emit event for real-time updates
+    eventEmitter.emitChange('category-updated', updatedCategory, changeId);
 
     res.json(updatedCategory);
   } catch (error) {
@@ -145,6 +155,7 @@ router.put('/:id', (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const { id } = req.params;
+    const { changeId } = req.body;
     const db = getDatabase();
 
     // Remove foreign key references before deleting
@@ -160,6 +171,9 @@ router.delete('/:id', (req, res) => {
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Category not found' });
     }
+
+    // Emit event for real-time updates
+    eventEmitter.emitChange('category-deleted', { id: parseInt(id) }, changeId);
 
     res.status(204).send();
   } catch (error) {

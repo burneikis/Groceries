@@ -5,6 +5,7 @@ import {
   learnCategoryMapping,
   updateMappingUsage
 } from '../services/categorization.js';
+import eventEmitter from '../services/events.js';
 
 const router = express.Router();
 
@@ -42,7 +43,7 @@ router.get('/', (req, res) => {
  */
 router.post('/', (req, res) => {
   try {
-    const { name, description, amount, category_id } = req.body;
+    const { name, description, amount, category_id, changeId } = req.body;
 
     if (!name || name.trim().length === 0) {
       return res.status(400).json({ error: 'Item name is required' });
@@ -90,6 +91,9 @@ router.post('/', (req, res) => {
       WHERE items.id = ?
     `).get(result.lastInsertRowid);
 
+    // Emit event for real-time updates
+    eventEmitter.emitChange('item-created', newItem, changeId);
+
     res.status(201).json(newItem);
   } catch (error) {
     console.error('Error creating item:', error);
@@ -104,7 +108,7 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, amount, category_id } = req.body;
+    const { name, description, amount, category_id, changeId } = req.body;
 
     if (!name || name.trim().length === 0) {
       return res.status(400).json({ error: 'Item name is required' });
@@ -143,6 +147,9 @@ router.put('/:id', (req, res) => {
       WHERE items.id = ?
     `).get(id);
 
+    // Emit event for real-time updates
+    eventEmitter.emitChange('item-updated', updatedItem, changeId);
+
     res.json(updatedItem);
   } catch (error) {
     console.error('Error updating item:', error);
@@ -157,7 +164,7 @@ router.put('/:id', (req, res) => {
 router.patch('/:id/check', (req, res) => {
   try {
     const { id } = req.params;
-    const { checked } = req.body;
+    const { checked, changeId } = req.body;
 
     if (typeof checked !== 'boolean') {
       return res.status(400).json({ error: 'checked must be a boolean' });
@@ -185,6 +192,9 @@ router.patch('/:id/check', (req, res) => {
       WHERE items.id = ?
     `).get(id);
 
+    // Emit event for real-time updates
+    eventEmitter.emitChange('item-updated', updatedItem, changeId);
+
     res.json(updatedItem);
   } catch (error) {
     console.error('Error toggling item check:', error);
@@ -200,10 +210,14 @@ router.patch('/:id/check', (req, res) => {
 router.delete('/checked', (req, res) => {
   try {
     const db = getDatabase();
+    const { changeId } = req.body;
 
     const result = db
       .prepare('DELETE FROM items WHERE checked = 1')
       .run();
+
+    // Emit event for real-time updates
+    eventEmitter.emitChange('items-deleted-checked', { deletedCount: result.changes }, changeId);
 
     res.json({
       message: 'Checked items deleted',
@@ -222,6 +236,7 @@ router.delete('/checked', (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const { id } = req.params;
+    const { changeId } = req.body;
     const db = getDatabase();
 
     const result = db
@@ -231,6 +246,9 @@ router.delete('/:id', (req, res) => {
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Item not found' });
     }
+
+    // Emit event for real-time updates
+    eventEmitter.emitChange('item-deleted', { id: parseInt(id) }, changeId);
 
     res.status(204).send();
   } catch (error) {

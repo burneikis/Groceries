@@ -9,6 +9,7 @@ import { seedCategories } from './db/seed.js';
 import categoriesRouter from './routes/categories.js';
 import itemsRouter from './routes/items.js';
 import recipesRouter from './routes/recipes.js';
+import eventsRouter from './routes/events.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -47,6 +48,7 @@ app.get('/health', (req, res) => {
 app.use('/api/categories', categoriesRouter);
 app.use('/api/items', itemsRouter);
 app.use('/api/recipes', recipesRouter);
+app.use('/api/events', eventsRouter);
 
 // Serve frontend in production
 const publicPath = join(__dirname, '..', 'public');

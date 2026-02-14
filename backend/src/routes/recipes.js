@@ -1,6 +1,7 @@
 import express from 'express';
 import { getDatabase } from '../db/database.js';
 import { learnCategoryMapping } from '../services/categorization.js';
+import eventEmitter from '../services/events.js';
 
 const router = express.Router();
 
@@ -66,7 +67,7 @@ router.get('/:id', (req, res) => {
  */
 router.post('/', (req, res) => {
   try {
-    const { name, ingredients = [] } = req.body;
+    const { name, ingredients = [], changeId } = req.body;
 
     if (!name || name.trim().length === 0) {
       return res.status(400).json({ error: 'Recipe name is required' });
@@ -126,10 +127,15 @@ router.post('/', (req, res) => {
       ORDER BY position ASC
     `).all(newRecipeId);
 
-    res.status(201).json({
+    const newRecipeWithIngredients = {
       ...newRecipe,
       ingredients: recipeIngredients
-    });
+    };
+
+    // Emit event for real-time updates
+    eventEmitter.emitChange('recipe-created', newRecipeWithIngredients, changeId);
+
+    res.status(201).json(newRecipeWithIngredients);
   } catch (error) {
     console.error('Error creating recipe:', error);
     res.status(500).json({ error: error.message || 'Failed to create recipe' });
@@ -144,7 +150,7 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const { name, ingredients = [] } = req.body;
+    const { name, ingredients = [], changeId } = req.body;
 
     if (!name || name.trim().length === 0) {
       return res.status(400).json({ error: 'Recipe name is required' });
@@ -207,10 +213,15 @@ router.put('/:id', (req, res) => {
       ORDER BY position ASC
     `).all(id);
 
-    res.json({
+    const updatedRecipeWithIngredients = {
       ...updatedRecipe,
       ingredients: recipeIngredients
-    });
+    };
+
+    // Emit event for real-time updates
+    eventEmitter.emitChange('recipe-updated', updatedRecipeWithIngredients, changeId);
+
+    res.json(updatedRecipeWithIngredients);
   } catch (error) {
     console.error('Error updating recipe:', error);
     if (error.message === 'Recipe not found') {
@@ -228,6 +239,7 @@ router.put('/:id', (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const { id } = req.params;
+    const { changeId } = req.body;
     const db = getDatabase();
 
     const result = db
@@ -237,6 +249,9 @@ router.delete('/:id', (req, res) => {
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Recipe not found' });
     }
+
+    // Emit event for real-time updates
+    eventEmitter.emitChange('recipe-deleted', { id: parseInt(id) }, changeId);
 
     res.status(204).send();
   } catch (error) {
@@ -252,6 +267,7 @@ router.delete('/:id', (req, res) => {
 router.post('/:id/add-to-list', (req, res) => {
   try {
     const { id } = req.params;
+    const { changeId } = req.body;
     const db = getDatabase();
 
     // Get recipe ingredients
@@ -310,6 +326,11 @@ router.post('/:id/add-to-list', (req, res) => {
       LEFT JOIN categories ON items.category_id = categories.id
       WHERE items.id IN (${addedItemIds.map(() => '?').join(',')})
     `).all(...addedItemIds);
+
+    // Emit events for each created item
+    addedItems.forEach(item => {
+      eventEmitter.emitChange('item-created', item, changeId);
+    });
 
     res.status(201).json({
       message: 'Recipe ingredients added to list',
