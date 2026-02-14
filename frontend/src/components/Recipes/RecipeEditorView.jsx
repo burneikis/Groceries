@@ -92,25 +92,29 @@ export default function RecipeEditorView() {
 
   return (
     <div className="max-w-lg mx-auto px-4">
-      <header className="py-4 flex items-center justify-between">
-        <button
-          onClick={() => navigate('/recipes')}
-          className="text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300"
-        >
-          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-          </svg>
-        </button>
-        <h1 className="text-lg font-bold text-gray-900 dark:text-slate-100">
+      <header className="py-4 grid grid-cols-3 items-center">
+        <div className="flex justify-start">
+          <button
+            onClick={() => navigate('/recipes')}
+            className="text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300"
+          >
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+            </svg>
+          </button>
+        </div>
+        <h1 className="text-lg font-bold text-gray-900 dark:text-slate-100 text-center">
           {isNew ? 'New Recipe' : 'Edit Recipe'}
         </h1>
-        <button
-          onClick={handleSave}
-          disabled={saving || !name.trim()}
-          className="px-4 py-1.5 rounded-lg bg-amber-500 dark:bg-amber-600 text-white text-sm font-semibold hover:bg-amber-600 dark:hover:bg-amber-700 disabled:opacity-40 transition-colors"
-        >
-          {saving ? 'Saving...' : 'Save'}
-        </button>
+        <div className="flex justify-end">
+          <button
+            onClick={handleSave}
+            disabled={saving || !name.trim()}
+            className="px-4 py-1.5 rounded-lg bg-amber-500 dark:bg-amber-600 text-white text-sm font-semibold hover:bg-amber-600 dark:hover:bg-amber-700 disabled:opacity-40 transition-colors"
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
       </header>
 
       <div className="space-y-4">
