@@ -1,4 +1,3 @@
-- fix centering of nav and title
 - confirmation dialogue on deleting items and clearing items
 - Frequently bought items quick-add
 - Shopping history/analytics
