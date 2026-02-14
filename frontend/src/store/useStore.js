@@ -13,7 +13,7 @@ const useStore = create((set, get) => ({
   categories: [],
   items: [],
   recipes: [],
-  loading: false,
+  loading: { categories: false, items: false, recipes: false },
   error: null,
   isOnline: navigator.onLine,
   pendingSyncs: 0,
@@ -51,16 +51,17 @@ const useStore = create((set, get) => ({
 
   // Categories
   fetchCategories: async () => {
+    set((s) => ({ loading: { ...s.loading, categories: true } }));
     try {
       const categories = await categoriesApi.getAll();
       await db.saveCategories(categories);
-      set({ categories });
+      set((s) => ({ categories, loading: { ...s.loading, categories: false } }));
     } catch (error) {
       if (isOfflineError(error)) {
         const categories = await db.getCategories();
-        set({ categories });
+        set((s) => ({ categories, loading: { ...s.loading, categories: false } }));
       } else {
-        set({ error: error.message });
+        set((s) => ({ error: error.message, loading: { ...s.loading, categories: false } }));
       }
     }
   },
@@ -150,16 +151,17 @@ const useStore = create((set, get) => ({
 
   // Items
   fetchItems: async () => {
+    set((s) => ({ loading: { ...s.loading, items: true } }));
     try {
       const items = await itemsApi.getAll();
       await db.saveItems(items);
-      set({ items });
+      set((s) => ({ items, loading: { ...s.loading, items: false } }));
     } catch (error) {
       if (isOfflineError(error)) {
         const items = await db.getItems();
-        set({ items });
+        set((s) => ({ items, loading: { ...s.loading, items: false } }));
       } else {
-        set({ error: error.message });
+        set((s) => ({ error: error.message, loading: { ...s.loading, items: false } }));
       }
     }
   },
@@ -272,16 +274,17 @@ const useStore = create((set, get) => ({
 
   // Recipes
   fetchRecipes: async () => {
+    set((s) => ({ loading: { ...s.loading, recipes: true } }));
     try {
       const recipes = await recipesApi.getAll();
       await db.saveRecipes(recipes);
-      set({ recipes });
+      set((s) => ({ recipes, loading: { ...s.loading, recipes: false } }));
     } catch (error) {
       if (isOfflineError(error)) {
         const recipes = await db.getRecipes();
-        set({ recipes });
+        set((s) => ({ recipes, loading: { ...s.loading, recipes: false } }));
       } else {
-        set({ error: error.message });
+        set((s) => ({ error: error.message, loading: { ...s.loading, recipes: false } }));
       }
     }
   },

@@ -3,14 +3,17 @@ import useStore from '../../store/useStore'
 import AddItemForm from './AddItemForm'
 import CategorySection from './CategorySection'
 import ClearCheckedButton from './ClearCheckedButton'
+import LoadingSpinner from '../LoadingSpinner'
 
 export default function GroceryListView() {
-  const { items, categories, fetchItems, fetchCategories } = useStore()
+  const { items, categories, loading, fetchItems, fetchCategories } = useStore()
 
   useEffect(() => {
     fetchItems()
     fetchCategories()
   }, [fetchItems, fetchCategories])
+
+  const isInitialLoad = (loading.items || loading.categories) && items.length === 0
 
   // Group items by category
   const uncheckedItems = items.filter((i) => !i.checked)
@@ -56,7 +59,9 @@ export default function GroceryListView() {
         )}
       </div>
 
-      {items.length === 0 && (
+      {isInitialLoad && <LoadingSpinner />}
+
+      {!isInitialLoad && items.length === 0 && (
         <p className="text-center text-gray-400 mt-12">
           Your list is empty. Add some items above!
         </p>

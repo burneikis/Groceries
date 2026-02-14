@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Navigation from './components/Navigation'
 import OfflineIndicator from './components/OfflineIndicator'
+import ErrorToast from './components/ErrorToast'
 import InstallPrompt from './components/InstallPrompt'
 import GroceryListView from './components/GroceryList/GroceryListView'
 import RecipesView from './components/Recipes/RecipesView'
@@ -19,6 +20,7 @@ export default function App() {
   return (
     <div className="flex flex-col min-h-[100dvh]">
       <OfflineIndicator />
+      <ErrorToast />
       <main className="flex-1 pb-20">
         <Routes>
           <Route path="/" element={<GroceryListView />} />

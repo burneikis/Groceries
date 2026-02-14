@@ -2,13 +2,16 @@ import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import useStore from '../../store/useStore'
 import RecipeCard from './RecipeCard'
+import LoadingSpinner from '../LoadingSpinner'
 
 export default function RecipesView() {
-  const { recipes, fetchRecipes } = useStore()
+  const { recipes, loading, fetchRecipes } = useStore()
 
   useEffect(() => {
     fetchRecipes()
   }, [fetchRecipes])
+
+  const isInitialLoad = loading.recipes && recipes.length === 0
 
   return (
     <div className="max-w-lg mx-auto px-4">
@@ -28,7 +31,9 @@ export default function RecipesView() {
         ))}
       </div>
 
-      {recipes.length === 0 && (
+      {isInitialLoad && <LoadingSpinner />}
+
+      {!isInitialLoad && recipes.length === 0 && (
         <p className="text-center text-gray-400 mt-12">
           No recipes yet. Create one to get started!
         </p>
