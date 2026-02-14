@@ -1,4 +1,3 @@
-- checked items stay inplace
 - Dark mode
 - Frequently bought items quick-add
 - Shopping history/analytics

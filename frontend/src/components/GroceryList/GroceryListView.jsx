@@ -15,25 +15,24 @@ export default function GroceryListView() {
 
   const isInitialLoad = (loading.items || loading.categories) && items.length === 0
 
-  // Group items by category
-  const uncheckedItems = items.filter((i) => !i.checked)
-  const checkedItems = items.filter((i) => i.checked)
+  const checkedCount = items.filter((i) => i.checked).length
 
+  // Group all items by category (checked items stay in their category)
   const grouped = categories
     .map((cat) => ({
       category: cat,
-      items: uncheckedItems.filter((i) => i.category_id === cat.id),
+      items: items.filter((i) => i.category_id === cat.id),
     }))
     .filter((g) => g.items.length > 0)
 
   // Items with no category
-  const uncategorized = uncheckedItems.filter((i) => !i.category_id)
+  const uncategorized = items.filter((i) => !i.category_id)
 
   return (
     <div className="max-w-lg mx-auto px-4">
       <header className="py-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Grocery List</h1>
-        {checkedItems.length > 0 && <ClearCheckedButton count={checkedItems.length} />}
+        {checkedCount > 0 && <ClearCheckedButton count={checkedCount} />}
       </header>
 
       <AddItemForm />
@@ -49,14 +48,6 @@ export default function GroceryListView() {
         {grouped.map(({ category, items }) => (
           <CategorySection key={category.id} category={category} items={items} />
         ))}
-
-        {checkedItems.length > 0 && (
-          <CategorySection
-            category={{ id: '__checked', name: 'Checked' }}
-            items={checkedItems}
-            defaultCollapsed
-          />
-        )}
       </div>
 
       {isInitialLoad && <LoadingSpinner />}
