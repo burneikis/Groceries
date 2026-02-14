@@ -20,6 +20,12 @@ const useStore = create((set, get) => ({
   theme: 'system', // 'light' | 'dark' | 'system'
   resolvedTheme: 'light', // actual theme being applied
 
+  // Helper to update pending syncs count
+  updatePendingSyncs: async () => {
+    const queue = await db.getSyncQueue();
+    set({ pendingSyncs: queue.length });
+  },
+
   // Initialize offline listeners
   initOfflineSupport: () => {
     const updateOnlineStatus = () => {
@@ -30,17 +36,18 @@ const useStore = create((set, get) => ({
 
     // Start sync listener - refresh data after sync
     const cleanup = startSyncListener(async () => {
-      const { fetchCategories, fetchItems, fetchRecipes } = get();
+      const { fetchCategories, fetchItems, fetchRecipes, updatePendingSyncs } = get();
       await Promise.all([fetchCategories(), fetchItems(), fetchRecipes()]);
-      const queue = await db.getSyncQueue();
-      set({ pendingSyncs: queue.length });
+      await updatePendingSyncs();
     });
 
     // Check for pending syncs
-    db.getSyncQueue().then((queue) => {
-      set({ pendingSyncs: queue.length });
+    const { updatePendingSyncs } = get();
+    updatePendingSyncs().then(async () => {
+      const queue = await db.getSyncQueue();
       if (queue.length > 0 && navigator.onLine) {
-        processQueue();
+        await processQueue();
+        await updatePendingSyncs();
       }
     });
 

@@ -1,4 +1,3 @@
-- pending update fix
 - live update
 - Frequently bought items quick-add
 - Shopping history/analytics
