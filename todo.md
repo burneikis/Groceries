@@ -1,3 +1,4 @@
+- safari zoom on edit fields prevention
 - checked items stay inplace
 - fix sizing of categories in list when items expand to edit
 - Dark mode
