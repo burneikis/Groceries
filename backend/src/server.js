@@ -1,3 +1,6 @@
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { existsSync } from 'fs';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -6,6 +9,8 @@ import { seedCategories } from './db/seed.js';
 import categoriesRouter from './routes/categories.js';
 import itemsRouter from './routes/items.js';
 import recipesRouter from './routes/recipes.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Load environment variables
 dotenv.config();
@@ -43,10 +48,19 @@ app.use('/api/categories', categoriesRouter);
 app.use('/api/items', itemsRouter);
 app.use('/api/recipes', recipesRouter);
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ error: 'Route not found' });
-});
+// Serve frontend in production
+const publicPath = join(__dirname, '..', 'public');
+if (existsSync(publicPath)) {
+  app.use(express.static(publicPath));
+  app.get('*', (req, res) => {
+    res.sendFile(join(publicPath, 'index.html'));
+  });
+} else {
+  // 404 handler (dev mode, no frontend build)
+  app.use((req, res) => {
+    res.status(404).json({ error: 'Route not found' });
+  });
+}
 
 // Error handler
 app.use((err, req, res, next) => {
