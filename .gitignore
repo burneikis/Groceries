@@ -3,3 +3,4 @@ backend/node_modules
 backend/.env
 frontend/dist
 frontend/node_modules
+backend/public
