@@ -24,20 +24,20 @@ export default function InstallPrompt() {
   }
 
   return (
-    <div className="fixed bottom-20 left-4 right-4 z-40 max-w-lg mx-auto bg-white rounded-xl shadow-lg border border-gray-200 p-4 flex items-center gap-3 animate-slide-up">
+    <div className="fixed bottom-20 left-4 right-4 z-40 max-w-lg mx-auto bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-4 flex items-center gap-3 animate-slide-up">
       <div className="flex-1">
-        <p className="text-sm font-medium text-gray-900">Install Groceries</p>
-        <p className="text-xs text-gray-500">Add to home screen for quick access</p>
+        <p className="text-sm font-medium text-gray-900 dark:text-slate-100">Install Groceries</p>
+        <p className="text-xs text-gray-500 dark:text-slate-400">Add to home screen for quick access</p>
       </div>
       <button
         onClick={() => setDismissed(true)}
-        className="text-gray-400 hover:text-gray-600 px-2 py-1 text-sm"
+        className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 px-2 py-1 text-sm"
       >
         Later
       </button>
       <button
         onClick={handleInstall}
-        className="bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-600 transition-colors"
+        className="bg-amber-500 dark:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-600 dark:hover:bg-amber-700 transition-colors"
       >
         Install
       </button>

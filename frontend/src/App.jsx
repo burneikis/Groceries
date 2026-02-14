@@ -12,10 +12,16 @@ import useStore from './store/useStore'
 
 export default function App() {
   const initOfflineSupport = useStore((s) => s.initOfflineSupport)
+  const initTheme = useStore((s) => s.initTheme)
 
   useEffect(() => {
-    return initOfflineSupport()
-  }, [initOfflineSupport])
+    const cleanupOffline = initOfflineSupport()
+    const cleanupTheme = initTheme()
+    return () => {
+      cleanupOffline()
+      cleanupTheme()
+    }
+  }, [initOfflineSupport, initTheme])
 
   return (
     <div className="flex flex-col min-h-[100dvh]">

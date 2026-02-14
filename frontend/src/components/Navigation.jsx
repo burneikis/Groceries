@@ -8,7 +8,7 @@ const navItems = [
 
 export default function Navigation() {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-pb z-50">
+    <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-800 border-t border-gray-200 dark:border-slate-700 safe-area-pb z-50">
       <div className="flex justify-around items-center h-16 max-w-lg mx-auto">
         {navItems.map(({ to, label, icon: Icon }) => (
           <NavLink
@@ -17,8 +17,8 @@ export default function Navigation() {
             className={({ isActive }) =>
               `flex flex-col items-center gap-1 px-4 py-2 text-xs font-medium transition-colors ${
                 isActive
-                  ? 'text-amber-600'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'text-amber-600 dark:text-amber-400'
+                  : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300'
               }`
             }
           >

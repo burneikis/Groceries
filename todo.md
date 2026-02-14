@@ -1,4 +1,3 @@
-- Dark mode
 - Frequently bought items quick-add
 - Shopping history/analytics
 - Price tracking

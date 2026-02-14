@@ -16,10 +16,10 @@ export default function RecipesView() {
   return (
     <div className="max-w-lg mx-auto px-4">
       <header className="py-4 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Recipes</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">Recipes</h1>
         <Link
           to="/recipes/new"
-          className="px-4 py-2 rounded-xl bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 active:bg-amber-700 transition-colors"
+          className="px-4 py-2 rounded-xl bg-amber-500 dark:bg-amber-600 text-white text-sm font-semibold hover:bg-amber-600 dark:hover:bg-amber-700 active:bg-amber-700 dark:active:bg-amber-800 transition-colors"
         >
           + New Recipe
         </Link>
@@ -34,7 +34,7 @@ export default function RecipesView() {
       {isInitialLoad && <LoadingSpinner />}
 
       {!isInitialLoad && recipes.length === 0 && (
-        <p className="text-center text-gray-400 mt-12">
+        <p className="text-center text-gray-400 dark:text-slate-500 mt-12">
           No recipes yet. Create one to get started!
         </p>
       )}

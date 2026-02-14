@@ -31,7 +31,7 @@ export default function GroceryListView() {
   return (
     <div className="max-w-lg mx-auto px-4">
       <header className="py-4 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Grocery List</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">Grocery List</h1>
         {checkedCount > 0 && <ClearCheckedButton count={checkedCount} />}
       </header>
 
@@ -53,7 +53,7 @@ export default function GroceryListView() {
       {isInitialLoad && <LoadingSpinner />}
 
       {!isInitialLoad && items.length === 0 && (
-        <p className="text-center text-gray-400 mt-12">
+        <p className="text-center text-gray-400 dark:text-slate-500 mt-12">
           Your list is empty. Add some items above!
         </p>
       )}

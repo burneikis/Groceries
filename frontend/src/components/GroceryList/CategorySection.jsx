@@ -5,19 +5,19 @@ export default function CategorySection({ category, items, defaultCollapsed = fa
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+    <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-slate-700 overflow-hidden">
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
       >
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-gray-700">{category.name}</span>
-          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+          <span className="text-sm font-semibold text-gray-700 dark:text-slate-200">{category.name}</span>
+          <span className="text-xs text-gray-400 dark:text-slate-500 bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">
             {items.length}
           </span>
         </div>
         <svg
-          className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${collapsed ? '' : 'rotate-180'}`}
+          className={`w-4 h-4 text-gray-400 dark:text-slate-500 transition-transform duration-200 ${collapsed ? '' : 'rotate-180'}`}
           fill="none"
           viewBox="0 0 24 24"
           strokeWidth={2}
@@ -32,7 +32,7 @@ export default function CategorySection({ category, items, defaultCollapsed = fa
           collapsed ? 'max-h-0 overflow-hidden' : 'max-h-[2000px]'
         }`}
       >
-        <div className="border-t border-gray-50">
+        <div className="border-t border-gray-50 dark:border-slate-700">
           {items.map((item) => (
             <ItemRow key={item.id} item={item} />
           ))}

@@ -17,6 +17,8 @@ const useStore = create((set, get) => ({
   error: null,
   isOnline: navigator.onLine,
   pendingSyncs: 0,
+  theme: 'system', // 'light' | 'dark' | 'system'
+  resolvedTheme: 'light', // actual theme being applied
 
   // Initialize offline listeners
   initOfflineSupport: () => {
@@ -46,6 +48,61 @@ const useStore = create((set, get) => ({
       window.removeEventListener('online', updateOnlineStatus);
       window.removeEventListener('offline', updateOnlineStatus);
       cleanup();
+    };
+  },
+
+  // Theme management
+  applyTheme: () => {
+    const { theme } = get();
+    let resolved = theme;
+
+    if (theme === 'system') {
+      resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+
+    // Apply dark class to html element
+    if (resolved === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+
+    // Update meta theme-color for mobile
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+      metaThemeColor.setAttribute('content', resolved === 'dark' ? '#0f172a' : '#ffffff');
+    }
+
+    set({ resolvedTheme: resolved });
+  },
+
+  setTheme: (theme) => {
+    set({ theme });
+    localStorage.setItem('theme', theme);
+    get().applyTheme();
+  },
+
+  initTheme: () => {
+    // Load theme preference from localStorage
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme && ['light', 'dark', 'system'].includes(savedTheme)) {
+      set({ theme: savedTheme });
+    }
+
+    // Apply initial theme
+    get().applyTheme();
+
+    // Listen for system theme changes
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = () => {
+      if (get().theme === 'system') {
+        get().applyTheme();
+      }
+    };
+    mediaQuery.addEventListener('change', handleChange);
+
+    return () => {
+      mediaQuery.removeEventListener('change', handleChange);
     };
   },
 

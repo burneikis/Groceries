@@ -56,12 +56,12 @@ export default function CategoryManager() {
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           placeholder="New category name..."
-          className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-base focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+          className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 text-base focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
         />
         <button
           type="submit"
           disabled={!newName.trim()}
-          className="px-4 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 disabled:opacity-40 transition-colors"
+          className="px-4 py-2.5 rounded-xl bg-amber-500 dark:bg-amber-600 text-white text-sm font-semibold hover:bg-amber-600 dark:hover:bg-amber-700 disabled:opacity-40 transition-colors"
         >
           Add
         </button>

@@ -14,7 +14,7 @@ export default function ClearCheckedButton({ count }) {
   return (
     <button
       onClick={handleClear}
-      className="text-sm text-gray-400 hover:text-red-500 transition-colors"
+      className="text-sm text-gray-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
     >
       Clear {count} checked
     </button>
