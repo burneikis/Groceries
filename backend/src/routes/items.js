@@ -38,6 +38,19 @@ router.get('/', (req, res) => {
 });
 
 /**
+ * GET /api/items/suggest-category?name=...
+ * Return a suggested category_id for the given item name based on learned mappings
+ */
+router.get('/suggest-category', (req, res) => {
+  const { name } = req.query;
+  if (!name || name.trim().length === 0) {
+    return res.status(400).json({ error: 'name query param is required' });
+  }
+  const categoryId = getSuggestedCategory(name.trim());
+  res.json({ category_id: categoryId });
+});
+
+/**
  * POST /api/items
  * Create a new item with auto-categorization
  */

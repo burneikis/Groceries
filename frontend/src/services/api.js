@@ -41,6 +41,7 @@ export const categoriesApi = {
 // Items
 export const itemsApi = {
   getAll: () => request('/items'),
+  suggestCategory: (name) => request(`/items/suggest-category?name=${encodeURIComponent(name)}`),
   create: (item, changeId) => request('/items', {
     method: 'POST',
     body: JSON.stringify({ ...item, changeId }),

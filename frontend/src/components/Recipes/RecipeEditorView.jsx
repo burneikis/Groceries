@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import useStore from '../../store/useStore'
-import { recipesApi } from '../../services/api'
+import { recipesApi, itemsApi } from '../../services/api'
 
 export default function RecipeEditorView() {
   const { id } = useParams()
@@ -50,6 +50,20 @@ export default function RecipeEditorView() {
 
   const removeIngredient = (index) => {
     setIngredients(ingredients.filter((_, i) => i !== index))
+  }
+
+  const handleIngredientNameBlur = async (index, name) => {
+    if (!name.trim()) return
+    const ing = ingredients[index]
+    if (ing.category_id) return // don't overwrite a manually chosen category
+    try {
+      const { category_id } = await itemsApi.suggestCategory(name.trim())
+      if (category_id) {
+        updateIngredient(index, 'category_id', category_id)
+      }
+    } catch {
+      // silently ignore
+    }
   }
 
   const handleSave = async () => {
@@ -146,6 +160,7 @@ export default function RecipeEditorView() {
                     type="text"
                     value={ing.name}
                     onChange={(e) => updateIngredient(index, 'name', e.target.value)}
+                    onBlur={(e) => handleIngredientNameBlur(index, e.target.value)}
                     placeholder="Ingredient name"
                     className="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 text-base focus:outline-none focus:ring-2 focus:ring-amber-400"
                   />

@@ -1,6 +1,6 @@
 import express from 'express';
 import { getDatabase } from '../db/database.js';
-import { learnCategoryMapping } from '../services/categorization.js';
+import { learnCategoryMapping, getSuggestedCategory } from '../services/categorization.js';
 import eventEmitter from '../services/events.js';
 
 const router = express.Router();
@@ -96,12 +96,14 @@ router.post('/', (req, res) => {
             throw new Error('Each ingredient must have a name');
           }
 
+          const categoryId = ing.category_id || getSuggestedCategory(ing.name.trim());
+
           insertIngredient.run(
             recipeId,
             ing.name.trim(),
             ing.description?.trim() || null,
             ing.amount?.trim() || null,
-            ing.category_id || null,
+            categoryId || null,
             ing.position || 0
           );
         }
@@ -184,12 +186,14 @@ router.put('/:id', (req, res) => {
             throw new Error('Each ingredient must have a name');
           }
 
+          const categoryId = ing.category_id || getSuggestedCategory(ing.name.trim());
+
           insertIngredient.run(
             id,
             ing.name.trim(),
             ing.description?.trim() || null,
             ing.amount?.trim() || null,
-            ing.category_id || null,
+            categoryId || null,
             ing.position || 0
           );
         }
