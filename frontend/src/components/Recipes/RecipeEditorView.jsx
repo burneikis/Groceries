@@ -37,7 +37,7 @@ export default function RecipeEditorView() {
   }, [id, isNew, navigate])
 
   const addIngredient = () => {
-    setIngredients([...ingredients, { name: '', amount: '', category_id: '' }])
+    setIngredients([{ name: '', amount: '', category_id: '' }, ...ingredients])
   }
 
   const updateIngredient = (index, field, value) => {
