@@ -8,9 +8,22 @@ export default function RecipeEditorView() {
   const navigate = useNavigate()
   const { categories, fetchCategories, createRecipe, updateRecipe } = useStore()
   const isNew = !id
+  const draftKey = isNew ? 'recipe_draft_new' : `recipe_draft_${id}`
 
-  const [name, setName] = useState('')
-  const [ingredients, setIngredients] = useState([])
+  const [name, setName] = useState(() => {
+    if (isNew) {
+      const draft = sessionStorage.getItem('recipe_draft_new')
+      return draft ? JSON.parse(draft).name : ''
+    }
+    return ''
+  })
+  const [ingredients, setIngredients] = useState(() => {
+    if (isNew) {
+      const draft = sessionStorage.getItem('recipe_draft_new')
+      return draft ? JSON.parse(draft).ingredients : []
+    }
+    return []
+  })
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(!isNew)
 
@@ -20,21 +33,34 @@ export default function RecipeEditorView() {
 
   useEffect(() => {
     if (!isNew) {
-      recipesApi.getById(id).then((recipe) => {
-        setName(recipe.name)
-        setIngredients(
-          recipe.ingredients.map((ing) => ({
-            name: ing.name,
-            amount: ing.amount || '',
-            category_id: ing.category_id || '',
-          }))
-        )
+      const draft = sessionStorage.getItem(draftKey)
+      if (draft) {
+        const { name: draftName, ingredients: draftIngredients } = JSON.parse(draft)
+        setName(draftName)
+        setIngredients(draftIngredients)
         setLoading(false)
-      }).catch(() => {
-        navigate('/recipes', { replace: true })
-      })
+      } else {
+        recipesApi.getById(id).then((recipe) => {
+          setName(recipe.name)
+          setIngredients(
+            recipe.ingredients.map((ing) => ({
+              name: ing.name,
+              amount: ing.amount || '',
+              category_id: ing.category_id || '',
+            }))
+          )
+          setLoading(false)
+        }).catch(() => {
+          navigate('/recipes', { replace: true })
+        })
+      }
     }
-  }, [id, isNew, navigate])
+  }, [id, isNew, navigate, draftKey])
+
+  useEffect(() => {
+    if (loading) return
+    sessionStorage.setItem(draftKey, JSON.stringify({ name, ingredients }))
+  }, [name, ingredients, draftKey, loading])
 
   const addIngredient = () => {
     setIngredients([{ name: '', amount: '', category_id: '' }, ...ingredients])
@@ -88,6 +114,7 @@ export default function RecipeEditorView() {
       } else {
         await updateRecipe(Number(id), recipe)
       }
+      sessionStorage.removeItem(draftKey)
       navigate('/recipes')
     } catch (err) {
       console.error('Failed to save recipe:', err)
@@ -109,7 +136,7 @@ export default function RecipeEditorView() {
       <header className="py-4 grid grid-cols-3 items-center">
         <div className="flex justify-start">
           <button
-            onClick={() => navigate('/recipes')}
+            onClick={() => { sessionStorage.removeItem(draftKey); navigate('/recipes') }}
             className="text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300"
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">

@@ -1,11 +1,26 @@
 import { useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import useStore from '../../store/useStore'
 import RecipeCard from './RecipeCard'
 import LoadingSpinner from '../LoadingSpinner'
 
 export default function RecipesView() {
   const { recipes, loading, fetchRecipes } = useStore()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (sessionStorage.getItem('recipe_draft_new')) {
+      navigate('/recipes/new', { replace: true })
+      return
+    }
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i)
+      if (key?.startsWith('recipe_draft_') && key !== 'recipe_draft_new') {
+        navigate(`/recipes/${key.replace('recipe_draft_', '')}`, { replace: true })
+        return
+      }
+    }
+  }, [navigate])
 
   useEffect(() => {
     fetchRecipes()
