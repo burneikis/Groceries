@@ -429,9 +429,18 @@ const useStore = create((set, get) => ({
   toggleItemCheck: async (id, checked) => {
     const changeId = get().generateChangeId();
     get().trackOwnChange(changeId); // Track BEFORE API call
-    // Optimistic update
+    // Optimistic update - toggle and re-sort so checked items move to bottom of their category
     set((s) => ({
-      items: s.items.map((i) => (i.id === id ? { ...i, checked: checked ? 1 : 0 } : i)),
+      items: s.items
+        .map((i) => (i.id === id ? { ...i, checked: checked ? 1 : 0 } : i))
+        .sort((a, b) => {
+          if (a.checked !== b.checked) return a.checked - b.checked;
+          if (a.category_sort_order !== b.category_sort_order)
+            return (a.category_sort_order ?? 0) - (b.category_sort_order ?? 0);
+          if (a.position_in_list !== b.position_in_list)
+            return (a.position_in_list ?? 0) - (b.position_in_list ?? 0);
+          return new Date(a.created_at) - new Date(b.created_at);
+        }),
     }));
     const updatedItem = get().items.find((i) => i.id === id);
     if (updatedItem) await db.saveItem(updatedItem);
