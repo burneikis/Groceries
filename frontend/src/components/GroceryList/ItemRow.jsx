@@ -7,6 +7,7 @@ export default function ItemRow({ item }) {
   const [editName, setEditName] = useState(item.name)
   const [editAmount, setEditAmount] = useState(item.amount || '')
   const [editCategory, setEditCategory] = useState(item.category_id || '')
+  const [saving, setSaving] = useState(false)
 
   const isChecked = !!item.checked
 
@@ -16,6 +17,7 @@ export default function ItemRow({ item }) {
 
   const handleSave = async () => {
     if (!editName.trim()) return
+    setSaving(true)
     try {
       await updateItem(item.id, {
         name: editName.trim(),
@@ -25,6 +27,8 @@ export default function ItemRow({ item }) {
       setEditing(false)
     } catch (err) {
       console.error('Failed to update item:', err)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -65,14 +69,17 @@ export default function ItemRow({ item }) {
         <div className="flex gap-2 justify-end">
           <button
             onClick={() => setEditing(false)}
-            className="px-3 py-1.5 text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300"
+            disabled={saving}
+            className="px-3 py-1.5 text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 disabled:opacity-40"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
-            className="px-3 py-1.5 text-sm bg-amber-500 dark:bg-amber-600 text-white rounded-lg hover:bg-amber-600 dark:hover:bg-amber-700"
+            disabled={saving}
+            className="px-3 py-1.5 text-sm bg-amber-500 dark:bg-amber-600 text-white rounded-lg hover:bg-amber-600 dark:hover:bg-amber-700 disabled:opacity-40 flex items-center gap-1.5"
           >
+            {saving && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />}
             Save
           </button>
         </div>

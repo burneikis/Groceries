@@ -20,6 +20,7 @@ import CategoryRow from './CategoryRow'
 export default function CategoryManager() {
   const { categories, createCategory, reorderCategories } = useStore()
   const [newName, setNewName] = useState('')
+  const [adding, setAdding] = useState(false)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -30,11 +31,14 @@ export default function CategoryManager() {
   const handleAdd = async (e) => {
     e.preventDefault()
     if (!newName.trim()) return
+    setAdding(true)
     try {
       await createCategory(newName.trim())
       setNewName('')
     } catch (err) {
       console.error('Failed to create category:', err)
+    } finally {
+      setAdding(false)
     }
   }
 
@@ -60,10 +64,12 @@ export default function CategoryManager() {
         />
         <button
           type="submit"
-          disabled={!newName.trim()}
+          disabled={!newName.trim() || adding}
           className="px-4 py-2.5 rounded-xl bg-amber-500 dark:bg-amber-600 text-white text-sm font-semibold hover:bg-amber-600 dark:hover:bg-amber-700 disabled:opacity-40 transition-colors"
         >
-          Add
+          {adding
+            ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
+            : 'Add'}
         </button>
       </form>
 

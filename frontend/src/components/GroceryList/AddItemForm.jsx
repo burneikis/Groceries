@@ -5,6 +5,7 @@ export default function AddItemForm() {
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const [showAmount, setShowAmount] = useState(false)
+  const [loading, setLoading] = useState(false)
   const createItem = useStore((s) => s.createItem)
 
   const handleSubmit = async (e) => {
@@ -12,6 +13,7 @@ export default function AddItemForm() {
     const trimmed = name.trim()
     if (!trimmed) return
 
+    setLoading(true)
     try {
       await createItem({
         name: trimmed,
@@ -22,6 +24,8 @@ export default function AddItemForm() {
       setShowAmount(false)
     } catch (err) {
       console.error('Failed to add item:', err)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -60,10 +64,12 @@ export default function AddItemForm() {
 
       <button
         type="submit"
-        disabled={!name.trim()}
+        disabled={!name.trim() || loading}
         className="h-12 px-5 rounded-xl bg-amber-500 dark:bg-amber-600 text-white font-semibold text-base hover:bg-amber-600 dark:hover:bg-amber-700 active:bg-amber-700 dark:active:bg-amber-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
-        Add
+        {loading
+          ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
+          : 'Add'}
       </button>
     </form>
   )
