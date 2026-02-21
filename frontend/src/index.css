@@ -51,6 +51,11 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* Main content padding that accounts for fixed navbar (6rem) + safe area */
+.main-content-pb {
+  padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+}
+
 /* Animations */
 @keyframes spin {
   to { transform: rotate(360deg); }

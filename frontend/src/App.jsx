@@ -30,7 +30,7 @@ export default function App() {
     <div className="flex flex-col min-h-[100dvh]">
       <OfflineIndicator />
       <ErrorToast />
-      <main className="flex-1 pb-24 overflow-y-auto">
+      <main className="flex-1 main-content-pb overflow-y-auto">
         <Routes>
           <Route path="/" element={<GroceryListView />} />
           <Route path="/recipes" element={<RecipesView />} />
