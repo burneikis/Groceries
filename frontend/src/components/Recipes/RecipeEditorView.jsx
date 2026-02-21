@@ -151,9 +151,10 @@ export default function RecipeEditorView() {
           <button
             onClick={handleSave}
             disabled={saving || !name.trim()}
-            className="px-4 py-1.5 rounded-lg bg-amber-500 dark:bg-amber-600 text-white text-sm font-semibold hover:bg-amber-600 dark:hover:bg-amber-700 disabled:opacity-40 transition-colors"
+            className="relative px-4 py-1.5 rounded-lg bg-amber-500 dark:bg-amber-600 text-white text-sm font-semibold hover:bg-amber-600 dark:hover:bg-amber-700 disabled:opacity-40 transition-colors"
           >
-            {saving ? 'Saving...' : 'Save'}
+            <span className={saving ? 'invisible' : ''}>Save</span>
+            {saving && <span className="absolute inset-0 flex items-center justify-center">Saving...</span>}
           </button>
         </div>
       </header>

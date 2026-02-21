@@ -96,10 +96,10 @@ export default function ItemRow({ item, categoryItemCount = 1 }) {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-3 py-1.5 text-sm bg-amber-500 dark:bg-amber-600 text-white rounded-lg hover:bg-amber-600 dark:hover:bg-amber-700 disabled:opacity-40 flex items-center gap-1.5"
+            className="relative px-3 py-1.5 text-sm bg-amber-500 dark:bg-amber-600 text-white rounded-lg hover:bg-amber-600 dark:hover:bg-amber-700 disabled:opacity-40 flex items-center justify-center"
           >
-            {saving && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />}
-            Save
+            <span className={saving ? 'invisible' : ''}>Save</span>
+            {saving && <span className="absolute inset-0 flex items-center justify-center"><span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /></span>}
           </button>
         </div>
       </div>

@@ -65,11 +65,10 @@ export default function CategoryManager() {
         <button
           type="submit"
           disabled={!newName.trim() || adding}
-          className="px-4 py-2.5 rounded-xl bg-amber-500 dark:bg-amber-600 text-white text-sm font-semibold hover:bg-amber-600 dark:hover:bg-amber-700 disabled:opacity-40 transition-colors"
+          className="relative px-4 py-2.5 rounded-xl bg-amber-500 dark:bg-amber-600 text-white text-sm font-semibold hover:bg-amber-600 dark:hover:bg-amber-700 disabled:opacity-40 transition-colors"
         >
-          {adding
-            ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
-            : 'Add'}
+          <span className={`inline-flex items-center justify-center ${adding ? 'invisible' : ''}`}>Add</span>
+          {adding && <span className="absolute inset-0 flex items-center justify-center"><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /></span>}
         </button>
       </form>
 

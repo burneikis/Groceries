@@ -65,11 +65,10 @@ export default function AddItemForm() {
       <button
         type="submit"
         disabled={!name.trim() || loading}
-        className="h-12 px-5 rounded-xl bg-amber-500 dark:bg-amber-600 text-white font-semibold text-base hover:bg-amber-600 dark:hover:bg-amber-700 active:bg-amber-700 dark:active:bg-amber-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        className="relative h-12 px-5 rounded-xl bg-amber-500 dark:bg-amber-600 text-white font-semibold text-base hover:bg-amber-600 dark:hover:bg-amber-700 active:bg-amber-700 dark:active:bg-amber-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
-        {loading
-          ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
-          : 'Add'}
+        <span className={`inline-flex items-center justify-center ${loading ? 'invisible' : ''}`}>Add</span>
+        {loading && <span className="absolute inset-0 flex items-center justify-center"><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /></span>}
       </button>
     </form>
   )
