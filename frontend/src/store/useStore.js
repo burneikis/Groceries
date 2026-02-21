@@ -434,20 +434,31 @@ const useStore = create((set, get) => ({
       const item = s.items.find((i) => i.id === id);
       let newPosition = item?.position_in_list ?? 0;
 
-      // When unchecking, move to bottom of unchecked items in the same category
-      if (!checked && item) {
-        const maxPos = Math.max(
-          0,
-          ...s.items
-            .filter((i) => !i.checked && i.category_id === item.category_id)
-            .map((i) => i.position_in_list ?? 0)
-        );
-        newPosition = maxPos + 1;
+      if (item) {
+        if (!checked) {
+          // When unchecking, move to bottom of unchecked items in the same category
+          const maxPos = Math.max(
+            0,
+            ...s.items
+              .filter((i) => !i.checked && i.category_id === item.category_id)
+              .map((i) => i.position_in_list ?? 0)
+          );
+          newPosition = maxPos + 1;
+        } else {
+          // When checking, move to top of checked items in the same category
+          const minPos = Math.min(
+            0,
+            ...s.items
+              .filter((i) => i.checked && i.category_id === item.category_id)
+              .map((i) => i.position_in_list ?? 0)
+          );
+          newPosition = minPos - 1;
+        }
       }
 
       return {
         items: s.items
-          .map((i) => (i.id === id ? { ...i, checked: checked ? 1 : 0, position_in_list: checked ? i.position_in_list : newPosition } : i))
+          .map((i) => (i.id === id ? { ...i, checked: checked ? 1 : 0, position_in_list: newPosition } : i))
           .sort((a, b) => {
             if (a.checked !== b.checked) return a.checked - b.checked;
             if (a.category_sort_order !== b.category_sort_order)

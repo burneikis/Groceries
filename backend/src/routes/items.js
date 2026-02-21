@@ -185,14 +185,20 @@ router.patch('/:id/check', (req, res) => {
 
     const db = getDatabase();
 
-    // When unchecking, move item to bottom of unchecked items in its category
-    if (!checked) {
-      const item = db.prepare('SELECT category_id FROM items WHERE id = ?').get(id);
-      if (item) {
+    const item = db.prepare('SELECT category_id FROM items WHERE id = ?').get(id);
+    if (item) {
+      if (!checked) {
+        // When unchecking, move item to bottom of unchecked items in its category
         const maxPos = db.prepare(
           'SELECT COALESCE(MAX(position_in_list), 0) as max_pos FROM items WHERE checked = 0 AND category_id = ?'
         ).get(item.category_id);
         db.prepare('UPDATE items SET position_in_list = ? WHERE id = ?').run((maxPos?.max_pos ?? 0) + 1, id);
+      } else {
+        // When checking, move item to top of checked items in its category
+        const minPos = db.prepare(
+          'SELECT COALESCE(MIN(position_in_list), 0) as min_pos FROM items WHERE checked = 1 AND category_id = ?'
+        ).get(item.category_id);
+        db.prepare('UPDATE items SET position_in_list = ? WHERE id = ?').run((minPos?.min_pos ?? 0) - 1, id);
       }
     }
 
