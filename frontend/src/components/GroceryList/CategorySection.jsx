@@ -34,7 +34,7 @@ export default function CategorySection({ category, items, defaultCollapsed = fa
       >
         <div className="border-t border-gray-50 dark:border-slate-700">
           {items.map((item) => (
-            <ItemRow key={item.id} item={item} />
+            <ItemRow key={item.id} item={item} categoryItemCount={items.length} />
           ))}
         </div>
       </div>

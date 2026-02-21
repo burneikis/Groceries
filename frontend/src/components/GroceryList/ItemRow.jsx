@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import useStore from '../../store/useStore'
 
-export default function ItemRow({ item }) {
+export default function ItemRow({ item, categoryItemCount = 1 }) {
   const { toggleItemCheck, deleteItem, updateItem, categories } = useStore()
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState(item.name)
@@ -10,9 +10,28 @@ export default function ItemRow({ item }) {
   const [saving, setSaving] = useState(false)
 
   const isChecked = !!item.checked
+  const [fadingOut, setFadingOut] = useState(false)
+
+  // When the item lands at the bottom (checked + still collapsed), expand it in
+  useEffect(() => {
+    if (fadingOut && isChecked) {
+      requestAnimationFrame(() => {
+        setFadingOut(false)
+      })
+    }
+  }, [fadingOut, isChecked])
+
+  const shouldAnimate = categoryItemCount > 1
 
   const handleCheck = () => {
-    toggleItemCheck(item.id, !isChecked)
+    if (!isChecked && shouldAnimate) {
+      setFadingOut(true)
+      setTimeout(() => {
+        toggleItemCheck(item.id, true)
+      }, 300)
+    } else {
+      toggleItemCheck(item.id, !isChecked)
+    }
   }
 
   const handleSave = async () => {
@@ -88,14 +107,13 @@ export default function ItemRow({ item }) {
   }
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 border-t border-gray-50 dark:border-slate-700 group">
+    <div className={`flex items-center gap-3 px-4 py-3 border-t border-gray-50 dark:border-slate-700 group transition-all duration-300 ${fadingOut ? 'opacity-0 py-0 overflow-hidden' : ''}`}>
       <button
         onClick={handleCheck}
-        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-          isChecked
-            ? 'bg-amber-500 dark:bg-amber-600 border-amber-500 dark:border-amber-600'
-            : 'border-gray-300 dark:border-slate-600 hover:border-amber-400 dark:hover:border-amber-500'
-        }`}
+        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${isChecked
+          ? 'bg-amber-500 dark:bg-amber-600 border-amber-500 dark:border-amber-600'
+          : 'border-gray-300 dark:border-slate-600 hover:border-amber-400 dark:hover:border-amber-500'
+          }`}
       >
         {isChecked && (
           <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor">
