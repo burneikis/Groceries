@@ -234,6 +234,50 @@ router.patch('/:id/check', (req, res) => {
 });
 
 /**
+ * PUT /api/items/reorder
+ * Reorder items by updating their position_in_list
+ */
+router.put('/reorder', (req, res) => {
+  try {
+    const { items, changeId } = req.body;
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ error: 'items must be an array' });
+    }
+
+    const db = getDatabase();
+    const update = db.prepare('UPDATE items SET position_in_list = ? WHERE id = ?');
+    const updateMany = db.transaction((items) => {
+      for (const { id, position_in_list } of items) {
+        update.run(position_in_list, id);
+      }
+    });
+    updateMany(items);
+
+    // Fetch all updated items with category info
+    const updatedItems = db.prepare(`
+      SELECT
+        items.*,
+        categories.name as category_name,
+        categories.sort_order as category_sort_order
+      FROM items
+      LEFT JOIN categories ON items.category_id = categories.id
+      ORDER BY
+        CASE WHEN items.checked = 1 THEN 1 ELSE 0 END,
+        categories.sort_order ASC,
+        items.position_in_list ASC,
+        items.created_at ASC
+    `).all();
+
+    eventEmitter.emitChange('items-reordered', updatedItems, changeId);
+
+    res.json(updatedItems);
+  } catch (error) {
+    console.error('Error reordering items:', error);
+    res.status(500).json({ error: 'Failed to reorder items' });
+  }
+});
+
+/**
  * DELETE /api/items/checked
  * Delete all checked items
  * Note: This must come before /:id route to avoid matching "checked" as an id

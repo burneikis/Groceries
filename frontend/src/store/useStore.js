@@ -175,6 +175,12 @@ const useStore = create((set, get) => ({
           break;
         }
 
+        case 'items-reordered': {
+          set({ items: data });
+          await db.saveItems(data);
+          break;
+        }
+
         // Category events
         case 'category-created': {
           set((s) => ({ categories: [...s.categories, data] }));
@@ -501,6 +507,33 @@ const useStore = create((set, get) => ({
         set((s) => ({ items: s.items.filter((i) => i.id !== id) }));
         await db.deleteItemLocal(id);
         await addToSyncQueue({ action: 'items.delete', data: { id } });
+        set((s) => ({ pendingSyncs: s.pendingSyncs + 1 }));
+      } else {
+        throw error;
+      }
+    }
+  },
+
+  reorderItems: async (reordered) => {
+    const updates = reordered.map((item, i) => ({ id: item.id, position_in_list: i + 1 }));
+    const changeId = get().generateChangeId();
+    get().trackOwnChange(changeId);
+    // Optimistic update: replace the reordered items in-place within the full list
+    const reorderedIds = new Set(reordered.map((i) => i.id));
+    const optimistic = [
+      ...get().items.filter((i) => !reorderedIds.has(i.id)),
+      ...reordered.map((item, idx) => ({ ...item, position_in_list: idx + 1 })),
+    ];
+    set({ items: optimistic });
+    await db.saveItems(optimistic);
+
+    try {
+      const items = await itemsApi.reorder(updates, changeId);
+      set({ items });
+      await db.saveItems(items);
+    } catch (error) {
+      if (isOfflineError(error)) {
+        await addToSyncQueue({ action: 'items.reorder', data: { items: updates } });
         set((s) => ({ pendingSyncs: s.pendingSyncs + 1 }));
       } else {
         throw error;

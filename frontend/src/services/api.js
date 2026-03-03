@@ -62,6 +62,10 @@ export const itemsApi = {
     method: 'DELETE',
     body: JSON.stringify({ changeId }),
   }),
+  reorder: (items, changeId) => request('/items/reorder', {
+    method: 'PUT',
+    body: JSON.stringify({ items, changeId }),
+  }),
 };
 
 // Recipes

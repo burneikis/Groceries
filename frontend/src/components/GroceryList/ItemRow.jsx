@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import useStore from '../../store/useStore'
 
-export default function ItemRow({ item, categoryItemCount = 1 }) {
+export default function ItemRow({ item, categoryItemCount = 1, draggable = false }) {
   const { toggleItemCheck, deleteItem, updateItem, categories } = useStore()
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState(item.name)
@@ -11,6 +13,20 @@ export default function ItemRow({ item, categoryItemCount = 1 }) {
 
   const isChecked = !!item.checked
   const [fadingOut, setFadingOut] = useState(false)
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id, disabled: !draggable })
+
+  const style = draggable ? {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  } : {}
 
   // When the item lands at the bottom (checked + still collapsed), expand it in
   useEffect(() => {
@@ -107,7 +123,23 @@ export default function ItemRow({ item, categoryItemCount = 1 }) {
   }
 
   return (
-    <div className={`flex items-center gap-3 px-4 py-3 border-t border-gray-50 dark:border-slate-700 group transition-all duration-300 ${fadingOut ? 'opacity-0 py-0 overflow-hidden' : ''}`}>
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-3 px-4 py-3 border-t border-gray-50 dark:border-slate-700 group transition-all duration-300 ${fadingOut ? 'opacity-0 py-0 overflow-hidden' : ''} ${isDragging ? 'opacity-50 bg-gray-50 dark:bg-slate-700' : ''}`}
+    >
+      {draggable && (
+        <button
+          {...attributes}
+          {...listeners}
+          className="p-0.5 text-gray-300 dark:text-slate-600 hover:text-gray-400 dark:hover:text-slate-500 cursor-grab active:cursor-grabbing touch-none flex-shrink-0"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+          </svg>
+        </button>
+      )}
+
       <button
         onClick={handleCheck}
         className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${isChecked

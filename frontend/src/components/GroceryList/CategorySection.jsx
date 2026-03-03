@@ -1,8 +1,44 @@
 import { useState } from 'react'
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  TouchSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import useStore from '../../store/useStore'
 import ItemRow from './ItemRow'
 
 export default function CategorySection({ category, items, defaultCollapsed = false }) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
+  const { reorderItems } = useStore()
+
+  const uncheckedItems = items.filter((i) => !i.checked)
+  const checkedItems = items.filter((i) => i.checked)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const oldIndex = uncheckedItems.findIndex((i) => i.id === active.id)
+    const newIndex = uncheckedItems.findIndex((i) => i.id === over.id)
+    const reordered = arrayMove(uncheckedItems, oldIndex, newIndex)
+    reorderItems(reordered)
+  }
 
   return (
     <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-slate-700 overflow-hidden">
@@ -33,7 +69,21 @@ export default function CategorySection({ category, items, defaultCollapsed = fa
         }`}
       >
         <div className="border-t border-gray-50 dark:border-slate-700">
-          {items.map((item) => (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={uncheckedItems.map((i) => i.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              {uncheckedItems.map((item) => (
+                <ItemRow key={item.id} item={item} categoryItemCount={items.length} draggable />
+              ))}
+            </SortableContext>
+          </DndContext>
+          {checkedItems.map((item) => (
             <ItemRow key={item.id} item={item} categoryItemCount={items.length} />
           ))}
         </div>
