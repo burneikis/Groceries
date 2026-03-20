@@ -38,6 +38,10 @@ export function initializeDatabase(dbPath) {
     db.exec(statement);
   }
 
+  // Add columns if they don't exist (safe to run repeatedly)
+  try { db.exec('ALTER TABLE items ADD COLUMN recipe_id INTEGER') } catch {}
+  try { db.exec('ALTER TABLE items ADD COLUMN recipe_name TEXT') } catch {}
+
   console.log('Database initialized successfully');
   return db;
 }

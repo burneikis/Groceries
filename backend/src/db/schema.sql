@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS items (
   category_id INTEGER,
   checked BOOLEAN DEFAULT 0,
   position_in_list INTEGER,
+  recipe_id INTEGER,
+  recipe_name TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (category_id) REFERENCES categories(id)

@@ -283,6 +283,10 @@ router.post('/:id/add-to-list', (req, res) => {
       return res.status(404).json({ error: 'Recipe not found or has no ingredients' });
     }
 
+    // Get recipe name for provenance label
+    const recipe = db.prepare('SELECT name FROM recipes WHERE id = ?').get(id);
+    const recipeName = recipe?.name || null;
+
     // Get the next position in list
     const maxPosition = db
       .prepare('SELECT MAX(position_in_list) as max FROM items')
@@ -292,8 +296,8 @@ router.post('/:id/add-to-list', (req, res) => {
     // Add each ingredient to items
     const addToList = db.transaction(() => {
       const insertItem = db.prepare(`
-        INSERT INTO items (name, description, amount, category_id, position_in_list, checked)
-        VALUES (?, ?, ?, ?, ?, 0)
+        INSERT INTO items (name, description, amount, category_id, position_in_list, checked, recipe_id, recipe_name)
+        VALUES (?, ?, ?, ?, ?, 0, ?, ?)
       `);
 
       const addedItems = [];
@@ -304,7 +308,9 @@ router.post('/:id/add-to-list', (req, res) => {
           ing.description || null,
           ing.amount || null,
           ing.category_id || null,
-          nextPosition++
+          nextPosition++,
+          parseInt(id),
+          recipeName
         );
 
         // Learn category mapping

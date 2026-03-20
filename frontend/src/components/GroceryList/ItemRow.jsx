@@ -167,6 +167,9 @@ export default function ItemRow({ item, categoryItemCount = 1, draggable = false
         {item.description && (
           <p className="text-xs text-gray-400 dark:text-slate-500 truncate">{item.description}</p>
         )}
+        {item.recipe_name && (
+          <p className="text-xs text-gray-300 dark:text-slate-600 truncate">from {item.recipe_name}</p>
+        )}
       </div>
 
       <button
