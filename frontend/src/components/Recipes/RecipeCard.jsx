@@ -60,7 +60,7 @@ export default function RecipeCard({ recipe }) {
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-gray-900 dark:text-slate-100">{recipe.name}</h3>
         <div className="flex gap-2">
-          {isOnList ? (
+          {isOnList && (
             <button
               onClick={handleRemoveFromList}
               disabled={removing}
@@ -69,22 +69,21 @@ export default function RecipeCard({ recipe }) {
               <span className={removing ? 'invisible' : ''}>Remove from List</span>
               {removing && <span className="absolute inset-0 flex items-center justify-center">...</span>}
             </button>
-          ) : (
-            <button
-              onClick={handleAddToList}
-              disabled={adding}
-              className={`relative px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                added
-                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                  : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/50'
-              }`}
-            >
-              <span className={adding ? 'invisible' : ''}>
-                {added ? 'Added!' : 'Add to List'}
-              </span>
-              {adding && <span className="absolute inset-0 flex items-center justify-center">...</span>}
-            </button>
           )}
+          <button
+            onClick={handleAddToList}
+            disabled={adding}
+            className={`relative px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+              added
+                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/50'
+            }`}
+          >
+            <span className={adding ? 'invisible' : ''}>
+              {added ? 'Added!' : 'Add to List'}
+            </span>
+            {adding && <span className="absolute inset-0 flex items-center justify-center">...</span>}
+          </button>
           <button
             onClick={handleDelete}
             disabled={deleting}
