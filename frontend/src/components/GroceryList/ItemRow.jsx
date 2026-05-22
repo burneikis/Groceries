@@ -25,7 +25,8 @@ export default function ItemRow({ item, categoryItemCount = 1, draggable = false
 
   const style = draggable ? {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: isDragging ? 'none' : transition,
+    zIndex: isDragging ? 10 : undefined,
   } : {}
 
   // When the item lands at the bottom (checked + still collapsed), expand it in
