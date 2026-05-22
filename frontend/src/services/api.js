@@ -88,4 +88,8 @@ export const recipesApi = {
     method: 'POST',
     body: JSON.stringify({ changeId }),
   }),
+  removeFromList: (id, changeId) => request(`/recipes/${id}/remove-from-list`, {
+    method: 'DELETE',
+    body: JSON.stringify({ changeId }),
+  }),
 };

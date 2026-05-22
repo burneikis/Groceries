@@ -645,6 +645,24 @@ const useStore = create((set, get) => ({
     }
   },
 
+  removeRecipeFromList: async (id) => {
+    const changeId = get().generateChangeId();
+    get().trackOwnChange(changeId);
+    // Optimistic update
+    set((s) => ({ items: s.items.filter((i) => i.recipe_id !== id) }));
+    await db.saveItems(get().items);
+    try {
+      await recipesApi.removeFromList(id, changeId);
+    } catch (error) {
+      if (isOfflineError(error)) {
+        await addToSyncQueue({ action: 'recipes.removeFromList', data: { id } });
+        set((s) => ({ pendingSyncs: s.pendingSyncs + 1 }));
+      } else {
+        throw error;
+      }
+    }
+  },
+
   addRecipeToList: async (id) => {
     const changeId = get().generateChangeId();
     get().trackOwnChange(changeId); // Track BEFORE API call

@@ -3,10 +3,13 @@ import { Link } from 'react-router-dom'
 import useStore from '../../store/useStore'
 
 export default function RecipeCard({ recipe }) {
-  const { addRecipeToList, deleteRecipe } = useStore()
+  const { addRecipeToList, removeRecipeFromList, deleteRecipe, items } = useStore()
   const [adding, setAdding] = useState(false)
   const [added, setAdded] = useState(false)
+  const [removing, setRemoving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  const isOnList = items.some((i) => i.recipe_id === recipe.id)
 
   const handleAddToList = async (e) => {
     e.preventDefault()
@@ -20,6 +23,19 @@ export default function RecipeCard({ recipe }) {
       console.error('Failed to add recipe to list:', err)
     } finally {
       setAdding(false)
+    }
+  }
+
+  const handleRemoveFromList = async (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setRemoving(true)
+    try {
+      await removeRecipeFromList(recipe.id)
+    } catch (err) {
+      console.error('Failed to remove recipe from list:', err)
+    } finally {
+      setRemoving(false)
     }
   }
 
@@ -44,20 +60,31 @@ export default function RecipeCard({ recipe }) {
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-gray-900 dark:text-slate-100">{recipe.name}</h3>
         <div className="flex gap-2">
-          <button
-            onClick={handleAddToList}
-            disabled={adding}
-            className={`relative px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-              added
-                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/50'
-            }`}
-          >
-            <span className={adding ? 'invisible' : ''}>
-              {added ? 'Added!' : 'Add to List'}
-            </span>
-            {adding && <span className="absolute inset-0 flex items-center justify-center">...</span>}
-          </button>
+          {isOnList ? (
+            <button
+              onClick={handleRemoveFromList}
+              disabled={removing}
+              className="relative px-3 py-1.5 text-xs font-medium rounded-lg transition-colors bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50"
+            >
+              <span className={removing ? 'invisible' : ''}>Remove from List</span>
+              {removing && <span className="absolute inset-0 flex items-center justify-center">...</span>}
+            </button>
+          ) : (
+            <button
+              onClick={handleAddToList}
+              disabled={adding}
+              className={`relative px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                added
+                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                  : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/50'
+              }`}
+            >
+              <span className={adding ? 'invisible' : ''}>
+                {added ? 'Added!' : 'Add to List'}
+              </span>
+              {adding && <span className="absolute inset-0 flex items-center justify-center">...</span>}
+            </button>
+          )}
           <button
             onClick={handleDelete}
             disabled={deleting}

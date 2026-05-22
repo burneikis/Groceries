@@ -353,4 +353,37 @@ router.post('/:id/add-to-list', (req, res) => {
   }
 });
 
+/**
+ * DELETE /api/recipes/:id/remove-from-list
+ * Remove all grocery list items that came from this recipe
+ */
+router.delete('/:id/remove-from-list', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { changeId } = req.body;
+    const db = getDatabase();
+
+    // Find items belonging to this recipe before deleting
+    const itemsToRemove = db
+      .prepare('SELECT id FROM items WHERE recipe_id = ?')
+      .all(id);
+
+    if (itemsToRemove.length === 0) {
+      return res.json({ message: 'No items to remove', itemsRemoved: 0 });
+    }
+
+    db.prepare('DELETE FROM items WHERE recipe_id = ?').run(id);
+
+    // Emit a deleted event for each removed item
+    itemsToRemove.forEach(item => {
+      eventEmitter.emitChange('item-deleted', { id: item.id }, changeId);
+    });
+
+    res.json({ message: 'Recipe ingredients removed from list', itemsRemoved: itemsToRemove.length });
+  } catch (error) {
+    console.error('Error removing recipe from list:', error);
+    res.status(500).json({ error: 'Failed to remove recipe from list' });
+  }
+});
+
 export default router;
