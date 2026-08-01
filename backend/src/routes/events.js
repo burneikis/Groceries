@@ -18,8 +18,12 @@ router.get('/', (req, res) => {
 
   // Handle CORS if needed
   res.setHeader('Access-Control-Allow-Origin', '*');
+  // Never let a proxy or the service worker buffer this stream
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
 
-  // Send initial connection confirmation
+  // Tell EventSource how long to wait before its own reconnect attempt
+  res.write('retry: 3000\n\n');
   res.write(': connected\n\n');
 
   // Register this client

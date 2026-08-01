@@ -109,10 +109,12 @@ export async function deleteRecipeLocal(id) {
 }
 
 // Sync Queue
+// Entries are replayed in insertion order (autoIncrement key) once back online.
 export async function addToSyncQueue(entry) {
   const db = await getDB();
-  await db.add('syncQueue', {
+  return db.add('syncQueue', {
     ...entry,
+    retries: 0,
     timestamp: Date.now(),
   });
 }
@@ -120,6 +122,17 @@ export async function addToSyncQueue(entry) {
 export async function getSyncQueue() {
   const db = await getDB();
   return db.getAll('syncQueue');
+}
+
+/** Persist changes to a queued entry (retry counter, remapped ids). */
+export async function updateSyncEntry(entry) {
+  const db = await getDB();
+  await db.put('syncQueue', entry);
+}
+
+export async function countSyncQueue() {
+  const db = await getDB();
+  return db.count('syncQueue');
 }
 
 export async function clearSyncQueue() {

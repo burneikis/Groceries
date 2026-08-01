@@ -51,3 +51,9 @@ CREATE TABLE IF NOT EXISTS item_category_mappings (
   last_used DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (category_id) REFERENCES categories(id)
 );
+
+-- Indexes for the joins/filters used on every request
+CREATE INDEX IF NOT EXISTS idx_items_category ON items(category_id);
+CREATE INDEX IF NOT EXISTS idx_items_recipe ON items(recipe_id);
+CREATE INDEX IF NOT EXISTS idx_items_checked ON items(checked);
+CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_recipe ON recipe_ingredients(recipe_id);

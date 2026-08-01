@@ -1,26 +1,27 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "=== Groceries App Deploy ==="
 echo ""
 
-# Install backend dependencies
-echo "[1/4] Installing backend dependencies..."
+echo "[1/5] Installing backend dependencies..."
 cd "$SCRIPT_DIR/backend"
-npm install --production
+npm install --omit=dev
 
-# Install frontend dependencies and build
-echo "[2/4] Installing frontend dependencies..."
+echo "[2/5] Installing frontend dependencies..."
 cd "$SCRIPT_DIR/frontend"
 npm install
 
-echo "[3/4] Building frontend..."
+echo "[3/5] Running frontend tests..."
+npm test
+
+echo "[4/5] Building frontend..."
 npm run build
 
-# Copy build to backend/public
-echo "[4/4] Copying frontend build to backend/public..."
+# Only replace the served build once the new one exists
+echo "[5/5] Publishing frontend build..."
 rm -rf "$SCRIPT_DIR/backend/public"
 cp -r "$SCRIPT_DIR/frontend/dist" "$SCRIPT_DIR/backend/public"
 

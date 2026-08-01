@@ -1,689 +1,573 @@
 import { create } from 'zustand';
-import { categoriesApi, itemsApi, recipesApi } from '../services/api';
+import { NetworkError, categoriesApi, itemsApi, recipesApi } from '../services/api';
 import * as db from '../services/db';
-import { addToSyncQueue } from '../services/db';
-import { processQueue, startSyncListener } from '../services/sync';
+import {
+  createTempId,
+  processQueue,
+  queueMutation,
+  startSyncListener,
+} from '../services/sync';
 import LiveUpdatesService from '../services/liveUpdates';
+import { positionForToggle, sortItems } from '../utils/sortItems';
 
-function isOfflineError(err) {
-  return !navigator.onLine || err.message === 'Failed to fetch' || err.name === 'TypeError';
-}
+/**
+ * Only a genuine transport failure means "we are offline". Anything else
+ * (including bugs in our own success path) must surface as a real error
+ * rather than being silently queued for later replay.
+ */
+const isOfflineError = (error) => error instanceof NetworkError;
 
-const useStore = create((set, get) => ({
-  // State
-  categories: [],
-  items: [],
-  recipes: [],
-  loading: { categories: false, items: false, recipes: false },
-  error: null,
-  isOnline: navigator.onLine,
-  pendingSyncs: 0,
-  theme: 'system', // 'light' | 'dark' | 'system'
-  resolvedTheme: 'light', // actual theme being applied
-  ownChangeIds: new Set(), // Track our own changes to prevent echo
-  liveUpdatesConnected: false, // SSE connection status
+/** How long a changeId is remembered so its SSE echo can be ignored. */
+const ECHO_WINDOW_MS = 30000;
 
-  // Helper to update pending syncs count
-  updatePendingSyncs: async () => {
-    const queue = await db.getSyncQueue();
-    set({ pendingSyncs: queue.length });
-  },
-
-  // Initialize offline listeners
-  initOfflineSupport: () => {
-    const updateOnlineStatus = () => {
-      set({ isOnline: navigator.onLine });
-    };
-    window.addEventListener('online', updateOnlineStatus);
-    window.addEventListener('offline', updateOnlineStatus);
-
-    // Start sync listener - refresh data after sync
-    const cleanup = startSyncListener(async () => {
-      const { fetchCategories, fetchItems, fetchRecipes, updatePendingSyncs } = get();
-      await Promise.all([fetchCategories(), fetchItems(), fetchRecipes()]);
-      await updatePendingSyncs();
-    });
-
-    // Check for pending syncs
-    const { updatePendingSyncs } = get();
-    updatePendingSyncs().then(async () => {
-      const queue = await db.getSyncQueue();
-      if (queue.length > 0 && navigator.onLine) {
-        await processQueue();
-        await updatePendingSyncs();
-      }
-    });
-
-    return () => {
-      window.removeEventListener('online', updateOnlineStatus);
-      window.removeEventListener('offline', updateOnlineStatus);
-      cleanup();
-    };
-  },
-
-  // Theme management
-  applyTheme: () => {
-    const { theme } = get();
-    let resolved = theme;
-
-    if (theme === 'system') {
-      resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }
-
-    // Apply dark class to html element
-    if (resolved === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-
-    // Update meta theme-color for mobile
-    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
-    if (metaThemeColor) {
-      metaThemeColor.setAttribute('content', resolved === 'dark' ? '#0f172a' : '#ffffff');
-    }
-
-    set({ resolvedTheme: resolved });
-  },
-
-  setTheme: (theme) => {
-    set({ theme });
-    localStorage.setItem('theme', theme);
-    get().applyTheme();
-  },
-
-  initTheme: () => {
-    // Load theme preference from localStorage
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme && ['light', 'dark', 'system'].includes(savedTheme)) {
-      set({ theme: savedTheme });
-    }
-
-    // Apply initial theme
-    get().applyTheme();
-
-    // Listen for system theme changes
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = () => {
-      if (get().theme === 'system') {
-        get().applyTheme();
-      }
-    };
-    mediaQuery.addEventListener('change', handleChange);
-
-    return () => {
-      mediaQuery.removeEventListener('change', handleChange);
-    };
-  },
-
-  // Live Updates (SSE)
-  generateChangeId: () => {
-    return `${Date.now()}-${Math.random().toString(36).substring(7)}`;
-  },
-
-  trackOwnChange: (changeId) => {
-    if (!changeId) return;
-    const { ownChangeIds } = get();
-    ownChangeIds.add(changeId);
-    set({ ownChangeIds: new Set(ownChangeIds) });
-
-    // Auto-expire after 5 seconds
-    setTimeout(() => {
-      const { ownChangeIds } = get();
-      ownChangeIds.delete(changeId);
-      set({ ownChangeIds: new Set(ownChangeIds) });
-    }, 5000);
-  },
-
-  handleRemoteChange: async (event) => {
-    const { type, data, changeId } = event;
-
-    // Ignore our own changes (echo prevention)
-    if (changeId && get().ownChangeIds.has(changeId)) {
-      console.log('[LiveUpdates] Ignoring own change:', type, changeId);
-      return;
-    }
-
-    console.log('[LiveUpdates] Processing remote change:', type);
-
-    try {
-      switch (type) {
-        // Item events
-        case 'item-created': {
-          set((s) => ({ items: [...s.items, data] }));
-          await db.saveItem(data);
-          break;
-        }
-
-        case 'item-updated': {
-          set((s) => ({
-            items: s.items.map((i) => (i.id === data.id ? data : i)),
-          }));
-          await db.saveItem(data);
-          break;
-        }
-
-        case 'item-deleted': {
-          set((s) => ({ items: s.items.filter((i) => i.id !== data.id) }));
-          await db.deleteItemLocal(data.id);
-          break;
-        }
-
-        case 'items-deleted-checked': {
-          set((s) => ({ items: s.items.filter((i) => !i.checked) }));
-          await db.deleteCheckedItemsLocal();
-          break;
-        }
-
-        case 'items-reordered': {
-          set({ items: data });
-          await db.saveItems(data);
-          break;
-        }
-
-        // Category events
-        case 'category-created': {
-          set((s) => ({ categories: [...s.categories, data] }));
-          await db.saveCategories([...get().categories]);
-          break;
-        }
-
-        case 'category-updated': {
-          set((s) => ({
-            categories: s.categories.map((c) => (c.id === data.id ? data : c)),
-          }));
-          await db.saveCategories(get().categories);
-          break;
-        }
-
-        case 'categories-reordered': {
-          set({ categories: data });
-          await db.saveCategories(data);
-          break;
-        }
-
-        case 'category-deleted': {
-          set((s) => ({ categories: s.categories.filter((c) => c.id !== data.id) }));
-          await db.saveCategories(get().categories);
-          break;
-        }
-
-        // Recipe events
-        case 'recipe-created': {
-          set((s) => ({ recipes: [...s.recipes, data] }));
-          await db.saveRecipe(data);
-          break;
-        }
-
-        case 'recipe-updated': {
-          set((s) => ({
-            recipes: s.recipes.map((r) => (r.id === data.id ? data : r)),
-          }));
-          await db.saveRecipe(data);
-          break;
-        }
-
-        case 'recipe-deleted': {
-          set((s) => ({ recipes: s.recipes.filter((r) => r.id !== data.id) }));
-          await db.deleteRecipeLocal(data.id);
-          break;
-        }
-
-        default:
-          console.warn('[LiveUpdates] Unknown event type:', type);
-      }
-    } catch (error) {
-      console.error('[LiveUpdates] Error processing remote change:', error);
-    }
-  },
-
-  initLiveUpdates: () => {
-    const liveUpdates = new LiveUpdatesService();
-    // Use window.location.origin in production, or VITE_API_URL in development
-    // This ensures SSE works from any device (phone, tablet, etc.)
-    const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
-    const sseUrl = `${apiUrl}/api/events`;
-
-    liveUpdates.connect(
-      sseUrl,
-      get().handleRemoteChange,
-      (connected) => set({ liveUpdatesConnected: connected })
-    );
-
-    // Return cleanup function
-    return () => {
-      liveUpdates.disconnect();
-    };
-  },
-
-  // Categories
-  fetchCategories: async () => {
-    set((s) => ({ loading: { ...s.loading, categories: true } }));
-    try {
-      const categories = await categoriesApi.getAll();
-      await db.saveCategories(categories);
-      set((s) => ({ categories, loading: { ...s.loading, categories: false } }));
-    } catch (error) {
-      if (isOfflineError(error)) {
-        const categories = await db.getCategories();
-        set((s) => ({ categories, loading: { ...s.loading, categories: false } }));
-      } else {
-        set((s) => ({ error: error.message, loading: { ...s.loading, categories: false } }));
-      }
-    }
-  },
-
-  createCategory: async (name) => {
+const useStore = create((set, get) => {
+  /**
+   * Runs a mutation with a consistent offline story.
+   *
+   * @param {object} steps
+   * @param {() => Promise<void>} [steps.optimistic] - Applied before the request
+   * @param {(changeId: string) => Promise<any>} steps.remote - The API call
+   * @param {() => Promise<any>} [steps.offline] - Local-only fallback; its
+   *   return value becomes the mutation's result
+   * @param {() => {action: string, data: object, tempId?: number}} [steps.queue]
+   *   - Describes how to replay this mutation once back online
+   * @param {(error: Error) => Promise<void>} [steps.revert] - Undo the
+   *   optimistic update when the server rejects the change
+   */
+  const mutate = async ({ optimistic, remote, offline, queue, revert }) => {
     const changeId = get().generateChangeId();
-    get().trackOwnChange(changeId); // Track BEFORE API call
-    try {
-      const category = await categoriesApi.create(name, changeId);
-      await db.saveCategories([...get().categories, category]);
-      set((s) => ({ categories: [...s.categories, category] }));
-      return category;
-    } catch (error) {
-      if (isOfflineError(error)) {
-        const tempId = -Date.now();
-        const category = { id: tempId, name, sort_order: get().categories.length + 1 };
-        set((s) => ({ categories: [...s.categories, category] }));
-        await db.saveCategories(get().categories);
-        await addToSyncQueue({ action: 'categories.create', data: { name } });
-        set((s) => ({ pendingSyncs: s.pendingSyncs + 1 }));
-        return category;
-      }
-      throw error;
-    }
-  },
+    get().trackOwnChange(changeId); // Track before the call to avoid an echo race
 
-  updateCategory: async (id, name) => {
-    const changeId = get().generateChangeId();
-    get().trackOwnChange(changeId); // Track BEFORE API call
+    await optimistic?.();
+
     try {
-      const updated = await categoriesApi.update(id, name, changeId);
-      set((s) => ({
-        categories: s.categories.map((c) => (c.id === id ? updated : c)),
-      }));
-      await db.saveCategories(get().categories);
+      return await remote(changeId);
     } catch (error) {
-      if (isOfflineError(error)) {
-        set((s) => ({
-          categories: s.categories.map((c) => (c.id === id ? { ...c, name } : c)),
-        }));
-        await db.saveCategories(get().categories);
-        await addToSyncQueue({ action: 'categories.update', data: { id, name } });
-        set((s) => ({ pendingSyncs: s.pendingSyncs + 1 }));
-      } else {
+      if (!isOfflineError(error)) {
+        await revert?.(error);
         throw error;
       }
-    }
-  },
 
-  deleteCategory: async (id) => {
-    const changeId = get().generateChangeId();
-    get().trackOwnChange(changeId); // Track BEFORE API call
-    try {
-      await categoriesApi.delete(id, changeId);
-      set((s) => ({
-        categories: s.categories.filter((c) => c.id !== id),
-      }));
-      await db.saveCategories(get().categories);
-    } catch (error) {
-      if (isOfflineError(error)) {
-        set((s) => ({
-          categories: s.categories.filter((c) => c.id !== id),
-        }));
-        await db.saveCategories(get().categories);
-        await addToSyncQueue({ action: 'categories.delete', data: { id } });
-        set((s) => ({ pendingSyncs: s.pendingSyncs + 1 }));
-      } else {
-        throw error;
-      }
-    }
-  },
-
-  reorderCategories: async (reordered) => {
-    const updates = reordered.map((cat, i) => ({ id: cat.id, sort_order: i + 1 }));
-    const changeId = get().generateChangeId();
-    get().trackOwnChange(changeId); // Track BEFORE API call
-    // Optimistic update
-    const optimistic = reordered.map((cat, i) => ({ ...cat, sort_order: i + 1 }));
-    set({ categories: optimistic });
-    await db.saveCategories(optimistic);
-
-    try {
-      const categories = await categoriesApi.reorder(updates, changeId);
-      set({ categories });
-      await db.saveCategories(categories);
-    } catch (error) {
-      if (isOfflineError(error)) {
-        await addToSyncQueue({ action: 'categories.reorder', data: { categories: updates } });
-        set((s) => ({ pendingSyncs: s.pendingSyncs + 1 }));
-      } else {
-        throw error;
-      }
-    }
-  },
-
-  // Items
-  fetchItems: async () => {
-    set((s) => ({ loading: { ...s.loading, items: true } }));
-    try {
-      const items = await itemsApi.getAll();
-      await db.saveItems(items);
-      set((s) => ({ items, loading: { ...s.loading, items: false } }));
-    } catch (error) {
-      if (isOfflineError(error)) {
-        const items = await db.getItems();
-        set((s) => ({ items, loading: { ...s.loading, items: false } }));
-      } else {
-        set((s) => ({ error: error.message, loading: { ...s.loading, items: false } }));
-      }
-    }
-  },
-
-  createItem: async (item) => {
-    const changeId = get().generateChangeId();
-    get().trackOwnChange(changeId); // Track BEFORE API call to prevent race condition
-    try {
-      const newItem = await itemsApi.create(item, changeId);
-      set((s) => ({ items: [...s.items, newItem] }));
-      await db.saveItem(newItem);
-      return newItem;
-    } catch (error) {
-      if (isOfflineError(error)) {
-        const tempItem = {
-          id: -Date.now(),
-          ...item,
-          checked: 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        set((s) => ({ items: [...s.items, tempItem] }));
-        await db.saveItem(tempItem);
-        await addToSyncQueue({ action: 'items.create', data: { item } });
-        set((s) => ({ pendingSyncs: s.pendingSyncs + 1 }));
-        return tempItem;
-      }
-      throw error;
-    }
-  },
-
-  updateItem: async (id, item) => {
-    const changeId = get().generateChangeId();
-    get().trackOwnChange(changeId); // Track BEFORE API call
-    try {
-      const updated = await itemsApi.update(id, item, changeId);
-      set((s) => ({
-        items: s.items.map((i) => (i.id === id ? updated : i)),
-      }));
-      await db.saveItem(updated);
-    } catch (error) {
-      if (isOfflineError(error)) {
-        const updated = { ...get().items.find((i) => i.id === id), ...item, updated_at: new Date().toISOString() };
-        set((s) => ({
-          items: s.items.map((i) => (i.id === id ? updated : i)),
-        }));
-        await db.saveItem(updated);
-        await addToSyncQueue({ action: 'items.update', data: { id, item } });
-        set((s) => ({ pendingSyncs: s.pendingSyncs + 1 }));
-      } else {
-        throw error;
-      }
-    }
-  },
-
-  toggleItemCheck: async (id, checked) => {
-    const changeId = get().generateChangeId();
-    get().trackOwnChange(changeId); // Track BEFORE API call
-    // Optimistic update - toggle and re-sort so checked items move to bottom of their category
-    set((s) => {
-      const item = s.items.find((i) => i.id === id);
-      let newPosition = item?.position_in_list ?? 0;
-
-      if (item) {
-        if (!checked) {
-          // When unchecking, move to bottom of unchecked items in the same category
-          const maxPos = Math.max(
-            0,
-            ...s.items
-              .filter((i) => !i.checked && i.category_id === item.category_id)
-              .map((i) => i.position_in_list ?? 0)
-          );
-          newPosition = maxPos + 1;
-        } else {
-          // When checking, move to top of checked items in the same category
-          const minPos = Math.min(
-            0,
-            ...s.items
-              .filter((i) => i.checked && i.category_id === item.category_id)
-              .map((i) => i.position_in_list ?? 0)
-          );
-          newPosition = minPos - 1;
-        }
-      }
-
-      return {
-        items: s.items
-          .map((i) => (i.id === id ? { ...i, checked: checked ? 1 : 0, position_in_list: newPosition } : i))
-          .sort((a, b) => {
-            if (a.checked !== b.checked) return a.checked - b.checked;
-            if (a.category_sort_order !== b.category_sort_order)
-              return (a.category_sort_order ?? 0) - (b.category_sort_order ?? 0);
-            if (a.position_in_list !== b.position_in_list)
-              return (a.position_in_list ?? 0) - (b.position_in_list ?? 0);
-            return new Date(a.created_at) - new Date(b.created_at);
-          }),
-      };
-    });
-    const updatedItem = get().items.find((i) => i.id === id);
-    if (updatedItem) await db.saveItem(updatedItem);
-
-    try {
-      await itemsApi.toggleCheck(id, checked, changeId);
-    } catch (error) {
-      if (isOfflineError(error)) {
-        await addToSyncQueue({ action: 'items.toggleCheck', data: { id, checked } });
-        set((s) => ({ pendingSyncs: s.pendingSyncs + 1 }));
-      } else {
-        // Revert on non-network failure
-        set((s) => ({
-          items: s.items.map((i) => (i.id === id ? { ...i, checked: checked ? 0 : 1 } : i)),
-        }));
-        const revertedItem = get().items.find((i) => i.id === id);
-        if (revertedItem) await db.saveItem(revertedItem);
-      }
-    }
-  },
-
-  deleteItem: async (id) => {
-    const changeId = get().generateChangeId();
-    get().trackOwnChange(changeId); // Track BEFORE API call
-    try {
-      await itemsApi.delete(id, changeId);
-      set((s) => ({ items: s.items.filter((i) => i.id !== id) }));
-      await db.deleteItemLocal(id);
-    } catch (error) {
-      if (isOfflineError(error)) {
-        set((s) => ({ items: s.items.filter((i) => i.id !== id) }));
-        await db.deleteItemLocal(id);
-        await addToSyncQueue({ action: 'items.delete', data: { id } });
-        set((s) => ({ pendingSyncs: s.pendingSyncs + 1 }));
-      } else {
-        throw error;
-      }
-    }
-  },
-
-  reorderItems: async (reordered) => {
-    const updates = reordered.map((item, i) => ({ id: item.id, position_in_list: i + 1 }));
-    const changeId = get().generateChangeId();
-    get().trackOwnChange(changeId);
-    // Optimistic update: replace the reordered items in-place within the full list
-    const reorderedIds = new Set(reordered.map((i) => i.id));
-    const optimistic = [
-      ...get().items.filter((i) => !reorderedIds.has(i.id)),
-      ...reordered.map((item, idx) => ({ ...item, position_in_list: idx + 1 })),
-    ];
-    set({ items: optimistic });
-    await db.saveItems(optimistic);
-
-    try {
-      const items = await itemsApi.reorder(updates, changeId);
-      set({ items });
-      await db.saveItems(items);
-    } catch (error) {
-      if (isOfflineError(error)) {
-        await addToSyncQueue({ action: 'items.reorder', data: { items: updates } });
-        set((s) => ({ pendingSyncs: s.pendingSyncs + 1 }));
-      } else {
-        throw error;
-      }
-    }
-  },
-
-  deleteCheckedItems: async () => {
-    const changeId = get().generateChangeId();
-    get().trackOwnChange(changeId); // Track BEFORE API call
-    const checkedIds = get().items.filter((i) => i.checked).map((i) => i.id);
-    set((s) => ({ items: s.items.filter((i) => !i.checked) }));
-    await db.deleteCheckedItemsLocal();
-
-    try {
-      await itemsApi.deleteChecked(changeId);
-    } catch (error) {
-      if (isOfflineError(error)) {
-        await addToSyncQueue({ action: 'items.deleteChecked', data: { ids: checkedIds } });
-        set((s) => ({ pendingSyncs: s.pendingSyncs + 1 }));
-      } else {
-        throw error;
-      }
-    }
-  },
-
-  // Recipes
-  fetchRecipes: async () => {
-    set((s) => ({ loading: { ...s.loading, recipes: true } }));
-    try {
-      const recipes = await recipesApi.getAll();
-      await db.saveRecipes(recipes);
-      set((s) => ({ recipes, loading: { ...s.loading, recipes: false } }));
-    } catch (error) {
-      if (isOfflineError(error)) {
-        const recipes = await db.getRecipes();
-        set((s) => ({ recipes, loading: { ...s.loading, recipes: false } }));
-      } else {
-        set((s) => ({ error: error.message, loading: { ...s.loading, recipes: false } }));
-      }
-    }
-  },
-
-  createRecipe: async (recipe) => {
-    const changeId = get().generateChangeId();
-    get().trackOwnChange(changeId); // Track BEFORE API call
-    try {
-      const newRecipe = await recipesApi.create(recipe, changeId);
-      set((s) => ({ recipes: [...s.recipes, newRecipe] }));
-      await db.saveRecipe(newRecipe);
-      return newRecipe;
-    } catch (error) {
-      if (isOfflineError(error)) {
-        const tempRecipe = {
-          id: -Date.now(),
-          ...recipe,
-          created_at: new Date().toISOString(),
-        };
-        set((s) => ({ recipes: [...s.recipes, tempRecipe] }));
-        await db.saveRecipe(tempRecipe);
-        await addToSyncQueue({ action: 'recipes.create', data: { recipe } });
-        set((s) => ({ pendingSyncs: s.pendingSyncs + 1 }));
-        return tempRecipe;
-      }
-      throw error;
-    }
-  },
-
-  updateRecipe: async (id, recipe) => {
-    const changeId = get().generateChangeId();
-    get().trackOwnChange(changeId); // Track BEFORE API call
-    try {
-      const updated = await recipesApi.update(id, recipe, changeId);
-      set((s) => ({
-        recipes: s.recipes.map((r) => (r.id === id ? updated : r)),
-      }));
-      await db.saveRecipe(updated);
-    } catch (error) {
-      if (isOfflineError(error)) {
-        const updated = { ...get().recipes.find((r) => r.id === id), ...recipe };
-        set((s) => ({
-          recipes: s.recipes.map((r) => (r.id === id ? updated : r)),
-        }));
-        await db.saveRecipe(updated);
-        await addToSyncQueue({ action: 'recipes.update', data: { id, recipe } });
-        set((s) => ({ pendingSyncs: s.pendingSyncs + 1 }));
-      } else {
-        throw error;
-      }
-    }
-  },
-
-  deleteRecipe: async (id) => {
-    const changeId = get().generateChangeId();
-    get().trackOwnChange(changeId); // Track BEFORE API call
-    try {
-      await recipesApi.delete(id, changeId);
-      set((s) => ({ recipes: s.recipes.filter((r) => r.id !== id) }));
-      await db.deleteRecipeLocal(id);
-    } catch (error) {
-      if (isOfflineError(error)) {
-        set((s) => ({ recipes: s.recipes.filter((r) => r.id !== id) }));
-        await db.deleteRecipeLocal(id);
-        await addToSyncQueue({ action: 'recipes.delete', data: { id } });
-        set((s) => ({ pendingSyncs: s.pendingSyncs + 1 }));
-      } else {
-        throw error;
-      }
-    }
-  },
-
-  removeRecipeFromList: async (id) => {
-    const changeId = get().generateChangeId();
-    get().trackOwnChange(changeId);
-    // Optimistic update
-    set((s) => ({ items: s.items.filter((i) => i.recipe_id !== id) }));
-    await db.saveItems(get().items);
-    try {
-      await recipesApi.removeFromList(id, changeId);
-    } catch (error) {
-      if (isOfflineError(error)) {
-        await addToSyncQueue({ action: 'recipes.removeFromList', data: { id } });
-        set((s) => ({ pendingSyncs: s.pendingSyncs + 1 }));
-      } else {
-        throw error;
-      }
-    }
-  },
-
-  addRecipeToList: async (id) => {
-    const changeId = get().generateChangeId();
-    get().trackOwnChange(changeId); // Track BEFORE API call
-    try {
-      const result = await recipesApi.addToList(id, changeId);
-      set((s) => ({ items: [...s.items, ...result.items] }));
-      for (const item of result.items) {
-        await db.saveItem(item);
+      const result = await offline?.();
+      if (queue) {
+        const { action, data, tempId } = queue();
+        await queueMutation(action, data, tempId);
+        await get().refreshPendingSyncs();
       }
       return result;
-    } catch (error) {
-      if (isOfflineError(error)) {
-        await addToSyncQueue({ action: 'recipes.addToList', data: { id } });
-        set((s) => ({ pendingSyncs: s.pendingSyncs + 1 }));
-        return { items: [] };
-      }
-      throw error;
     }
-  },
+  };
 
-  clearError: () => set({ error: null }),
-}));
+  /** Persist the current categories array to IndexedDB. */
+  const persistCategories = () => db.saveCategories(get().categories);
+
+  /**
+   * Shared fetch-with-cache-fallback used by all three collections.
+   * @param {'categories'|'items'|'recipes'} key
+   * @param {() => Promise<object[]>} fetchRemote
+   * @param {(data: object[]) => Promise<void>} saveLocal
+   * @param {() => Promise<object[]>} readLocal
+   */
+  const fetchCollection = async (key, fetchRemote, saveLocal, readLocal) => {
+    set((s) => ({ loading: { ...s.loading, [key]: true } }));
+    try {
+      const data = await fetchRemote();
+      await saveLocal(data);
+      set((s) => ({ [key]: data, loading: { ...s.loading, [key]: false } }));
+    } catch (error) {
+      if (!isOfflineError(error)) {
+        set((s) => ({ error: error.message, loading: { ...s.loading, [key]: false } }));
+        return;
+      }
+      const cached = await readLocal();
+      set((s) => ({ [key]: cached, loading: { ...s.loading, [key]: false } }));
+    }
+  };
+
+  return {
+    // State
+    categories: [],
+    items: [],
+    recipes: [],
+    loading: { categories: false, items: false, recipes: false },
+    error: null,
+    isOnline: navigator.onLine,
+    pendingSyncs: 0,
+    theme: 'system', // 'light' | 'dark' | 'system'
+    resolvedTheme: 'light',
+    ownChangeIds: new Set(), // Our own changes, to suppress SSE echoes
+    liveUpdatesConnected: false,
+
+    /** Re-read the queue length rather than tracking it by hand. */
+    refreshPendingSyncs: async () => {
+      set({ pendingSyncs: await db.countSyncQueue() });
+    },
+
+    // --- Offline support ---------------------------------------------------
+
+    initOfflineSupport: () => {
+      const updateOnlineStatus = () => set({ isOnline: navigator.onLine });
+      window.addEventListener('online', updateOnlineStatus);
+      window.addEventListener('offline', updateOnlineStatus);
+
+      const { trackOwnChange, refreshPendingSyncs } = get();
+
+      /** Pull fresh server state after a flush so temp ids are replaced. */
+      const afterSync = async ({ synced }) => {
+        if (synced > 0) {
+          const { fetchCategories, fetchItems, fetchRecipes } = get();
+          await Promise.all([fetchCategories(), fetchItems(), fetchRecipes()]);
+        }
+        await refreshPendingSyncs();
+      };
+
+      const stopSyncListener = startSyncListener(afterSync, trackOwnChange);
+
+      // Flush anything left over from a previous session.
+      refreshPendingSyncs()
+        .then(() => (get().pendingSyncs > 0 ? processQueue(trackOwnChange) : null))
+        .then((result) => result && afterSync(result))
+        .catch((error) => console.error('[Sync] Startup flush failed:', error));
+
+      return () => {
+        window.removeEventListener('online', updateOnlineStatus);
+        window.removeEventListener('offline', updateOnlineStatus);
+        stopSyncListener();
+      };
+    },
+
+    // --- Theme -------------------------------------------------------------
+
+    applyTheme: () => {
+      const { theme } = get();
+      const resolved = theme === 'system'
+        ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+        : theme;
+
+      document.documentElement.classList.toggle('dark', resolved === 'dark');
+      document
+        .querySelector('meta[name="theme-color"]')
+        ?.setAttribute('content', resolved === 'dark' ? '#0f172a' : '#ffffff');
+
+      set({ resolvedTheme: resolved });
+    },
+
+    setTheme: (theme) => {
+      set({ theme });
+      localStorage.setItem('theme', theme);
+      get().applyTheme();
+    },
+
+    initTheme: () => {
+      const savedTheme = localStorage.getItem('theme');
+      if (['light', 'dark', 'system'].includes(savedTheme)) {
+        set({ theme: savedTheme });
+      }
+      get().applyTheme();
+
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const handleChange = () => {
+        if (get().theme === 'system') get().applyTheme();
+      };
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
+    },
+
+    // --- Live updates (SSE) ------------------------------------------------
+
+    generateChangeId: () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+
+    trackOwnChange: (changeId) => {
+      if (!changeId) return;
+      set((s) => ({ ownChangeIds: new Set(s.ownChangeIds).add(changeId) }));
+
+      setTimeout(() => {
+        set((s) => {
+          const ids = new Set(s.ownChangeIds);
+          ids.delete(changeId);
+          return { ownChangeIds: ids };
+        });
+      }, ECHO_WINDOW_MS);
+    },
+
+    handleRemoteChange: async (event) => {
+      const { type, data, changeId } = event;
+
+      if (changeId && get().ownChangeIds.has(changeId)) return; // Our own echo
+
+      const handlers = {
+        'item-created': async () => {
+          if (get().items.some((i) => i.id === data.id)) return;
+          set((s) => ({ items: sortItems([...s.items, data]) }));
+          await db.saveItem(data);
+        },
+        'item-updated': async () => {
+          set((s) => ({ items: sortItems(s.items.map((i) => (i.id === data.id ? data : i))) }));
+          await db.saveItem(data);
+        },
+        'item-deleted': async () => {
+          set((s) => ({ items: s.items.filter((i) => i.id !== data.id) }));
+          await db.deleteItemLocal(data.id);
+        },
+        'items-deleted-checked': async () => {
+          const removed = new Set(data.ids ?? []);
+          set((s) => ({ items: s.items.filter((i) => !removed.has(i.id)) }));
+          await Promise.all([...removed].map((id) => db.deleteItemLocal(id)));
+        },
+        'items-reordered': async () => {
+          set({ items: data });
+          await db.saveItems(data);
+        },
+        'category-created': async () => {
+          if (get().categories.some((c) => c.id === data.id)) return;
+          set((s) => ({ categories: [...s.categories, data] }));
+          await persistCategories();
+        },
+        'category-updated': async () => {
+          set((s) => ({ categories: s.categories.map((c) => (c.id === data.id ? data : c)) }));
+          await persistCategories();
+        },
+        'category-deleted': async () => {
+          set((s) => ({ categories: s.categories.filter((c) => c.id !== data.id) }));
+          await persistCategories();
+        },
+        'categories-reordered': async () => {
+          set({ categories: data });
+          await db.saveCategories(data);
+        },
+        'recipe-created': async () => {
+          if (get().recipes.some((r) => r.id === data.id)) return;
+          set((s) => ({ recipes: [...s.recipes, data] }));
+          await db.saveRecipe(data);
+        },
+        'recipe-updated': async () => {
+          set((s) => ({ recipes: s.recipes.map((r) => (r.id === data.id ? data : r)) }));
+          await db.saveRecipe(data);
+        },
+        'recipe-deleted': async () => {
+          set((s) => ({ recipes: s.recipes.filter((r) => r.id !== data.id) }));
+          await db.deleteRecipeLocal(data.id);
+        },
+      };
+
+      const handler = handlers[type];
+      if (!handler) {
+        console.warn('[LiveUpdates] Unknown event type:', type);
+        return;
+      }
+
+      try {
+        await handler();
+      } catch (error) {
+        console.error('[LiveUpdates] Error processing remote change:', error);
+      }
+    },
+
+    initLiveUpdates: () => {
+      const liveUpdates = new LiveUpdatesService();
+      // Same-origin by default so the stream works from any device on the network
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+
+      liveUpdates.connect(
+        `${apiUrl}/api/events`,
+        get().handleRemoteChange,
+        (connected) => set({ liveUpdatesConnected: connected })
+      );
+
+      return () => liveUpdates.disconnect();
+    },
+
+    // --- Categories --------------------------------------------------------
+
+    fetchCategories: () =>
+      fetchCollection('categories', categoriesApi.getAll, db.saveCategories, db.getCategories),
+
+    createCategory: (name) => {
+      const tempId = createTempId();
+      return mutate({
+        remote: async (changeId) => {
+          const category = await categoriesApi.create(name, changeId);
+          set((s) => ({ categories: [...s.categories, category] }));
+          await persistCategories();
+          return category;
+        },
+        offline: async () => {
+          const category = { id: tempId, name, sort_order: get().categories.length + 1 };
+          set((s) => ({ categories: [...s.categories, category] }));
+          await persistCategories();
+          return category;
+        },
+        queue: () => ({ action: 'categories.create', data: { name }, tempId }),
+      });
+    },
+
+    updateCategory: (id, name) =>
+      mutate({
+        remote: async (changeId) => {
+          const updated = await categoriesApi.update(id, name, changeId);
+          set((s) => ({ categories: s.categories.map((c) => (c.id === id ? updated : c)) }));
+          await persistCategories();
+        },
+        offline: async () => {
+          set((s) => ({ categories: s.categories.map((c) => (c.id === id ? { ...c, name } : c)) }));
+          await persistCategories();
+        },
+        queue: () => ({ action: 'categories.update', data: { id, name } }),
+      }),
+
+    deleteCategory: (id) => {
+      const removeLocally = async () => {
+        set((s) => ({ categories: s.categories.filter((c) => c.id !== id) }));
+        await persistCategories();
+      };
+      return mutate({
+        remote: async (changeId) => {
+          await categoriesApi.delete(id, changeId);
+          await removeLocally();
+        },
+        offline: removeLocally,
+        queue: () => ({ action: 'categories.delete', data: { id } }),
+      });
+    },
+
+    reorderCategories: (reordered) => {
+      const updates = reordered.map((cat, i) => ({ id: cat.id, sort_order: i + 1 }));
+      const previous = get().categories;
+
+      return mutate({
+        optimistic: async () => {
+          const optimistic = reordered.map((cat, i) => ({ ...cat, sort_order: i + 1 }));
+          set({ categories: optimistic });
+          await db.saveCategories(optimistic);
+        },
+        remote: async (changeId) => {
+          const categories = await categoriesApi.reorder(updates, changeId);
+          set({ categories });
+          await db.saveCategories(categories);
+        },
+        queue: () => ({ action: 'categories.reorder', data: { categories: updates } }),
+        revert: async () => {
+          set({ categories: previous });
+          await db.saveCategories(previous);
+        },
+      });
+    },
+
+    // --- Items -------------------------------------------------------------
+
+    fetchItems: () => fetchCollection('items', itemsApi.getAll, db.saveItems, db.getItems),
+
+    createItem: (item) => {
+      const tempId = createTempId();
+      return mutate({
+        remote: async (changeId) => {
+          const newItem = await itemsApi.create(item, changeId);
+          set((s) => ({ items: sortItems([...s.items, newItem]) }));
+          await db.saveItem(newItem);
+          return newItem;
+        },
+        offline: async () => {
+          const now = new Date().toISOString();
+          const tempItem = { id: tempId, ...item, checked: 0, created_at: now, updated_at: now };
+          set((s) => ({ items: sortItems([...s.items, tempItem]) }));
+          await db.saveItem(tempItem);
+          return tempItem;
+        },
+        queue: () => ({ action: 'items.create', data: { item }, tempId }),
+      });
+    },
+
+    updateItem: (id, item) =>
+      mutate({
+        remote: async (changeId) => {
+          const updated = await itemsApi.update(id, item, changeId);
+          set((s) => ({ items: sortItems(s.items.map((i) => (i.id === id ? updated : i))) }));
+          await db.saveItem(updated);
+        },
+        offline: async () => {
+          const existing = get().items.find((i) => i.id === id);
+          const updated = { ...existing, ...item, updated_at: new Date().toISOString() };
+          set((s) => ({ items: sortItems(s.items.map((i) => (i.id === id ? updated : i))) }));
+          await db.saveItem(updated);
+        },
+        queue: () => ({ action: 'items.update', data: { id, item } }),
+      }),
+
+    toggleItemCheck: (id, checked) => {
+      const previous = get().items.find((i) => i.id === id);
+
+      return mutate({
+        optimistic: async () => {
+          set((s) => {
+            const item = s.items.find((i) => i.id === id);
+            if (!item) return {};
+            const toggled = {
+              ...item,
+              checked: checked ? 1 : 0,
+              position_in_list: positionForToggle(s.items, item, checked),
+            };
+            return { items: sortItems(s.items.map((i) => (i.id === id ? toggled : i))) };
+          });
+
+          const updated = get().items.find((i) => i.id === id);
+          if (updated) await db.saveItem(updated);
+        },
+        remote: (changeId) => itemsApi.toggleCheck(id, checked, changeId),
+        queue: () => ({ action: 'items.toggleCheck', data: { id, checked } }),
+        revert: async () => {
+          if (!previous) return;
+          set((s) => ({ items: sortItems(s.items.map((i) => (i.id === id ? previous : i))) }));
+          await db.saveItem(previous);
+        },
+      });
+    },
+
+    deleteItem: (id) => {
+      const removeLocally = async () => {
+        set((s) => ({ items: s.items.filter((i) => i.id !== id) }));
+        await db.deleteItemLocal(id);
+      };
+      return mutate({
+        remote: async (changeId) => {
+          await itemsApi.delete(id, changeId);
+          await removeLocally();
+        },
+        offline: removeLocally,
+        queue: () => ({ action: 'items.delete', data: { id } }),
+      });
+    },
+
+    reorderItems: (reordered) => {
+      const updates = reordered.map((item, i) => ({ id: item.id, position_in_list: i + 1 }));
+      const previous = get().items;
+
+      return mutate({
+        optimistic: async () => {
+          const reorderedIds = new Set(reordered.map((i) => i.id));
+          const optimistic = sortItems([
+            ...previous.filter((i) => !reorderedIds.has(i.id)),
+            ...reordered.map((item, idx) => ({ ...item, position_in_list: idx + 1 })),
+          ]);
+          set({ items: optimistic });
+          await db.saveItems(optimistic);
+        },
+        remote: async (changeId) => {
+          const items = await itemsApi.reorder(updates, changeId);
+          set({ items });
+          await db.saveItems(items);
+        },
+        queue: () => ({ action: 'items.reorder', data: { items: updates } }),
+        revert: async () => {
+          set({ items: previous });
+          await db.saveItems(previous);
+        },
+      });
+    },
+
+    deleteCheckedItems: () => {
+      const checkedIds = get().items.filter((i) => i.checked).map((i) => i.id);
+      const previous = get().items;
+
+      return mutate({
+        optimistic: async () => {
+          set((s) => ({ items: s.items.filter((i) => !i.checked) }));
+          await db.deleteCheckedItemsLocal();
+        },
+        // Scope the delete to the ids we actually saw checked, so a replay
+        // cannot remove items somebody else checked in the meantime.
+        remote: (changeId) => itemsApi.deleteChecked(checkedIds, changeId),
+        queue: () => ({ action: 'items.deleteChecked', data: { ids: checkedIds } }),
+        revert: async () => {
+          set({ items: previous });
+          await db.saveItems(previous);
+        },
+      });
+    },
+
+    // --- Recipes -----------------------------------------------------------
+
+    fetchRecipes: () => fetchCollection('recipes', recipesApi.getAll, db.saveRecipes, db.getRecipes),
+
+    createRecipe: (recipe) => {
+      const tempId = createTempId();
+      return mutate({
+        remote: async (changeId) => {
+          const newRecipe = await recipesApi.create(recipe, changeId);
+          set((s) => ({ recipes: [...s.recipes, newRecipe] }));
+          await db.saveRecipe(newRecipe);
+          return newRecipe;
+        },
+        offline: async () => {
+          const tempRecipe = { id: tempId, ...recipe, created_at: new Date().toISOString() };
+          set((s) => ({ recipes: [...s.recipes, tempRecipe] }));
+          await db.saveRecipe(tempRecipe);
+          return tempRecipe;
+        },
+        queue: () => ({ action: 'recipes.create', data: { recipe }, tempId }),
+      });
+    },
+
+    updateRecipe: (id, recipe) =>
+      mutate({
+        remote: async (changeId) => {
+          const updated = await recipesApi.update(id, recipe, changeId);
+          set((s) => ({ recipes: s.recipes.map((r) => (r.id === id ? updated : r)) }));
+          await db.saveRecipe(updated);
+        },
+        offline: async () => {
+          const updated = { ...get().recipes.find((r) => r.id === id), ...recipe };
+          set((s) => ({ recipes: s.recipes.map((r) => (r.id === id ? updated : r)) }));
+          await db.saveRecipe(updated);
+        },
+        queue: () => ({ action: 'recipes.update', data: { id, recipe } }),
+      }),
+
+    deleteRecipe: (id) => {
+      const removeLocally = async () => {
+        set((s) => ({ recipes: s.recipes.filter((r) => r.id !== id) }));
+        await db.deleteRecipeLocal(id);
+      };
+      return mutate({
+        remote: async (changeId) => {
+          await recipesApi.delete(id, changeId);
+          await removeLocally();
+        },
+        offline: removeLocally,
+        queue: () => ({ action: 'recipes.delete', data: { id } }),
+      });
+    },
+
+    addRecipeToList: (id) =>
+      mutate({
+        remote: async (changeId) => {
+          const result = await recipesApi.addToList(id, changeId);
+          set((s) => ({ items: sortItems([...s.items, ...result.items]) }));
+          await Promise.all(result.items.map((item) => db.saveItem(item)));
+          return result;
+        },
+        offline: async () => ({ items: [] }),
+        queue: () => ({ action: 'recipes.addToList', data: { id } }),
+      }),
+
+    removeRecipeFromList: (id) => {
+      const previous = get().items;
+      return mutate({
+        optimistic: async () => {
+          const remaining = previous.filter((i) => i.recipe_id !== id);
+          set({ items: remaining });
+          await db.saveItems(remaining);
+        },
+        remote: (changeId) => recipesApi.removeFromList(id, changeId),
+        queue: () => ({ action: 'recipes.removeFromList', data: { id } }),
+        revert: async () => {
+          set({ items: previous });
+          await db.saveItems(previous);
+        },
+      });
+    },
+
+    clearError: () => set({ error: null }),
+  };
+});
 
 export default useStore;

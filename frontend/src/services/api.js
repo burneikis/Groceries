@@ -1,17 +1,45 @@
 const API_BASE = '/api';
 
-async function request(path, options = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
+/** The request never reached the server (offline, DNS, connection refused). */
+export class NetworkError extends Error {
+  constructor(cause) {
+    super('Network request failed');
+    this.name = 'NetworkError';
+    this.cause = cause;
+  }
+}
+
+/** The server responded, but with an error status. */
+export class ApiError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+
+  /** 4xx responses will never succeed on replay, so queued entries can be dropped. */
+  get isPermanent() {
+    return this.status >= 400 && this.status < 500;
+  }
+}
+
+async function request(path, { headers, ...options } = {}) {
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...headers },
+    });
+  } catch (error) {
+    throw new NetworkError(error);
+  }
 
   if (res.status === 204) return null;
 
-  const data = await res.json();
+  const data = await res.json().catch(() => null);
 
   if (!res.ok) {
-    throw new Error(data.error || `Request failed: ${res.status}`);
+    throw new ApiError(res.status, data?.error || `Request failed: ${res.status}`);
   }
 
   return data;
@@ -58,9 +86,9 @@ export const itemsApi = {
     method: 'DELETE',
     body: JSON.stringify({ changeId }),
   }),
-  deleteChecked: (changeId) => request('/items/checked', {
+  deleteChecked: (ids, changeId) => request('/items/checked', {
     method: 'DELETE',
-    body: JSON.stringify({ changeId }),
+    body: JSON.stringify({ ids, changeId }),
   }),
   reorder: (items, changeId) => request('/items/reorder', {
     method: 'PUT',

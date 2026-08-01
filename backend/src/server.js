@@ -50,6 +50,12 @@ app.use('/api/items', itemsRouter);
 app.use('/api/recipes', recipesRouter);
 app.use('/api/events', eventsRouter);
 
+// Unknown API routes must 404 as JSON rather than falling through to the SPA,
+// which would hand the client an HTML body it cannot parse.
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'Route not found' });
+});
+
 // Serve frontend in production
 const publicPath = join(__dirname, '..', 'public');
 if (existsSync(publicPath)) {
@@ -75,27 +81,10 @@ app.use((err, req, res, next) => {
 
 // Start server
 const server = app.listen(PORT, () => {
-  console.log(`
-╔═══════════════════════════════════════════════╗
-║                                               ║
-║   Grocery App API Server                      ║
-║                                               ║
-║   Status: Running                             ║
-║   Port: ${PORT}                                   ║
-║   Database: ${DATABASE_PATH}                  ║
-║   Environment: ${process.env.NODE_ENV || 'development'}              ║
-║                                               ║
-║   Endpoints:                                  ║
-║   - GET  /health                              ║
-║   - GET  /api/categories                      ║
-║   - POST /api/categories                      ║
-║   - GET  /api/items                           ║
-║   - POST /api/items                           ║
-║   - GET  /api/recipes                         ║
-║   - POST /api/recipes                         ║
-║                                               ║
-╚═══════════════════════════════════════════════╝
-  `);
+  console.log('Grocery App API server listening');
+  console.log(`  Port:        ${PORT}`);
+  console.log(`  Database:    ${DATABASE_PATH}`);
+  console.log(`  Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
 // Graceful shutdown

@@ -36,9 +36,15 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // Never intercept /api/events: it is an infinite SSE stream, and
+        // buffering it in a NetworkFirst handler stalls live updates.
+        navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
-            urlPattern: /^https?:\/\/.*\/api\/.*/i,
+            urlPattern: ({ url, request }) =>
+              url.pathname.startsWith('/api/') &&
+              url.pathname !== '/api/events' &&
+              request.method === 'GET',
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',
@@ -48,7 +54,7 @@ export default defineConfig({
               },
               networkTimeoutSeconds: 5,
               cacheableResponse: {
-                statuses: [0, 200],
+                statuses: [200],
               },
             },
           },

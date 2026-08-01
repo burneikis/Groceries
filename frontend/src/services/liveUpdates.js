@@ -11,6 +11,8 @@ class LiveUpdatesService {
     this.baseReconnectDelay = 1000; // 1 second
     this.onConnectionChange = null;
     this.onEvent = null;
+    this.url = null;
+    this.closed = false;
   }
 
   /**
@@ -22,73 +24,70 @@ class LiveUpdatesService {
   connect(url, onEvent, onConnectionChange) {
     this.onEvent = onEvent;
     this.onConnectionChange = onConnectionChange;
+    this.url = url;
+    this.closed = false;
 
-    // Clean up existing connection
-    if (this.eventSource) {
-      this.disconnect();
-    }
-
-    console.log('[LiveUpdates] Connecting to SSE endpoint:', url);
+    this.teardown();
 
     try {
       this.eventSource = new EventSource(url);
 
       this.eventSource.onopen = () => {
-        console.log('[LiveUpdates] Connected');
-        this.reconnectAttempts = 0; // Reset reconnect counter
-        if (this.onConnectionChange) {
-          this.onConnectionChange(true);
-        }
+        this.reconnectAttempts = 0;
+        this.onConnectionChange?.(true);
       };
 
       this.eventSource.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data);
-          console.log('[LiveUpdates] Received event:', data.type);
-          if (this.onEvent) {
-            this.onEvent(data);
-          }
+          this.onEvent?.(JSON.parse(event.data));
         } catch (error) {
           console.error('[LiveUpdates] Error parsing event data:', error);
         }
       };
 
-      this.eventSource.onerror = (error) => {
-        console.error('[LiveUpdates] Connection error:', error);
-        if (this.onConnectionChange) {
-          this.onConnectionChange(false);
-        }
-
-        // EventSource automatically reconnects, but we add exponential backoff
-        this.scheduleReconnect(url);
+      this.eventSource.onerror = () => {
+        this.onConnectionChange?.(false);
+        // The browser would retry on its own, which combined with our backoff
+        // produced overlapping connections. Close it and own the retry.
+        this.teardown();
+        this.scheduleReconnect();
       };
     } catch (error) {
       console.error('[LiveUpdates] Failed to create EventSource:', error);
-      this.scheduleReconnect(url);
+      this.scheduleReconnect();
+    }
+  }
+
+  /** Close the current EventSource and cancel any pending reconnect. */
+  teardown() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.eventSource) {
+      this.eventSource.onopen = null;
+      this.eventSource.onmessage = null;
+      this.eventSource.onerror = null;
+      this.eventSource.close();
+      this.eventSource = null;
     }
   }
 
   /**
-   * Schedule a reconnection attempt with exponential backoff
-   * @param {string} url - SSE endpoint URL
+   * Schedule a reconnect with exponential backoff: 1s, 2s, 4s ... 30s max.
    */
-  scheduleReconnect(url) {
-    // Clear any existing reconnect timer
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-    }
+  scheduleReconnect() {
+    if (this.closed || this.reconnectTimer) return;
 
-    // Calculate delay with exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (max)
     const delay = Math.min(
-      this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts),
+      this.baseReconnectDelay * 2 ** this.reconnectAttempts,
       this.maxReconnectDelay
     );
 
-    console.log(`[LiveUpdates] Scheduling reconnect in ${delay}ms (attempt ${this.reconnectAttempts + 1})`);
-
     this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       this.reconnectAttempts++;
-      this.connect(url, this.onEvent, this.onConnectionChange);
+      this.connect(this.url, this.onEvent, this.onConnectionChange);
     }, delay);
   }
 
@@ -96,22 +95,9 @@ class LiveUpdatesService {
    * Disconnect from the SSE endpoint
    */
   disconnect() {
-    console.log('[LiveUpdates] Disconnecting');
-
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-
-    if (this.eventSource) {
-      this.eventSource.close();
-      this.eventSource = null;
-    }
-
-    if (this.onConnectionChange) {
-      this.onConnectionChange(false);
-    }
-
+    this.closed = true;
+    this.teardown();
+    this.onConnectionChange?.(false);
     this.reconnectAttempts = 0;
   }
 

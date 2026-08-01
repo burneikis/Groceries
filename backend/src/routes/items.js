@@ -1,335 +1,225 @@
 import express from 'express';
 import { getDatabase } from '../db/database.js';
-import {
-  getSuggestedCategory,
-  learnCategoryMapping,
-  updateMappingUsage
-} from '../services/categorization.js';
+import { SELECT_ALL_ITEMS, SELECT_ITEM_BY_ID } from '../db/queries.js';
+import { getSuggestedCategory, learnCategoryMapping } from '../services/categorization.js';
 import eventEmitter from '../services/events.js';
+import { badRequest, handler, notFound } from '../utils/http.js';
 
 const router = express.Router();
+
+/** @returns {object[]} every item in canonical list order */
+const allItems = (db) => db.prepare(SELECT_ALL_ITEMS).all();
+
+/** @returns {object|undefined} a single item with its category info */
+const itemById = (db, id) => db.prepare(SELECT_ITEM_BY_ID).get(id);
 
 /**
  * GET /api/items
  * Get all items with category information
  */
-router.get('/', (req, res) => {
-  try {
-    const db = getDatabase();
-    const items = db.prepare(`
-      SELECT
-        items.*,
-        categories.name as category_name,
-        categories.sort_order as category_sort_order
-      FROM items
-      LEFT JOIN categories ON items.category_id = categories.id
-      ORDER BY
-        CASE WHEN items.checked = 1 THEN 1 ELSE 0 END,
-        categories.sort_order ASC,
-        items.position_in_list ASC,
-        items.created_at ASC
-    `).all();
-
-    res.json(items);
-  } catch (error) {
-    console.error('Error fetching items:', error);
-    res.status(500).json({ error: 'Failed to fetch items' });
-  }
-});
+router.get('/', handler('fetching items', (req, res) => {
+  res.json(allItems(getDatabase()));
+}));
 
 /**
  * GET /api/items/suggest-category?name=...
  * Return a suggested category_id for the given item name based on learned mappings
  */
-router.get('/suggest-category', (req, res) => {
+router.get('/suggest-category', handler('suggesting category', (req, res) => {
   const { name } = req.query;
   if (!name || name.trim().length === 0) {
-    return res.status(400).json({ error: 'name query param is required' });
+    throw badRequest('name query param is required');
   }
-  const categoryId = getSuggestedCategory(name.trim());
-  res.json({ category_id: categoryId });
-});
+  res.json({ category_id: getSuggestedCategory(name.trim()) });
+}));
 
 /**
  * POST /api/items
- * Create a new item with auto-categorization
+ * Create a new item, auto-categorizing it when no category is supplied
  */
-router.post('/', (req, res) => {
-  try {
-    const { name, description, amount, category_id, changeId } = req.body;
+router.post('/', handler('creating item', (req, res) => {
+  const { name, description, amount, category_id, changeId } = req.body;
 
-    if (!name || name.trim().length === 0) {
-      return res.status(400).json({ error: 'Item name is required' });
-    }
-
-    const db = getDatabase();
-
-    // If no category provided, try to auto-categorize
-    let finalCategoryId = category_id;
-    if (!finalCategoryId) {
-      const suggestedCategoryId = getSuggestedCategory(name);
-      finalCategoryId = suggestedCategoryId;
-    }
-
-    // Get the next position in list
-    const maxPosition = db
-      .prepare('SELECT MAX(position_in_list) as max FROM items')
-      .get();
-    const nextPosition = (maxPosition.max || 0) + 1;
-
-    const result = db.prepare(`
-      INSERT INTO items (name, description, amount, category_id, position_in_list, checked)
-      VALUES (?, ?, ?, ?, ?, 0)
-    `).run(
-      name.trim(),
-      description?.trim() || null,
-      amount?.trim() || null,
-      finalCategoryId || null,
-      nextPosition
-    );
-
-    // Learn the category mapping if a category was assigned
-    if (finalCategoryId) {
-      learnCategoryMapping(name, finalCategoryId);
-    }
-
-    // Fetch the created item with category info
-    const newItem = db.prepare(`
-      SELECT
-        items.*,
-        categories.name as category_name,
-        categories.sort_order as category_sort_order
-      FROM items
-      LEFT JOIN categories ON items.category_id = categories.id
-      WHERE items.id = ?
-    `).get(result.lastInsertRowid);
-
-    // Emit event for real-time updates
-    eventEmitter.emitChange('item-created', newItem, changeId);
-
-    res.status(201).json(newItem);
-  } catch (error) {
-    console.error('Error creating item:', error);
-    res.status(500).json({ error: 'Failed to create item' });
+  if (!name || name.trim().length === 0) {
+    throw badRequest('Item name is required');
   }
-});
+
+  const db = getDatabase();
+  const categoryId = category_id || getSuggestedCategory(name) || null;
+
+  const { max } = db.prepare('SELECT MAX(position_in_list) as max FROM items').get();
+
+  const result = db.prepare(`
+    INSERT INTO items (name, description, amount, category_id, position_in_list, checked)
+    VALUES (?, ?, ?, ?, ?, 0)
+  `).run(
+    name.trim(),
+    description?.trim() || null,
+    amount?.trim() || null,
+    categoryId,
+    (max || 0) + 1
+  );
+
+  if (categoryId) {
+    learnCategoryMapping(name, categoryId);
+  }
+
+  const newItem = itemById(db, result.lastInsertRowid);
+  eventEmitter.emitChange('item-created', newItem, changeId);
+  res.status(201).json(newItem);
+}));
 
 /**
  * PUT /api/items/reorder
  * Reorder items by updating their position_in_list
+ * Note: must come before /:id so "reorder" is not matched as an id
  */
-router.put('/reorder', (req, res) => {
-  try {
-    const { items, changeId } = req.body;
-    if (!Array.isArray(items)) {
-      return res.status(400).json({ error: 'items must be an array' });
-    }
-
-    const db = getDatabase();
-    const update = db.prepare('UPDATE items SET position_in_list = ? WHERE id = ?');
-    const updateMany = db.transaction((items) => {
-      for (const { id, position_in_list } of items) {
-        update.run(position_in_list, id);
-      }
-    });
-    updateMany(items);
-
-    // Fetch all updated items with category info
-    const updatedItems = db.prepare(`
-      SELECT
-        items.*,
-        categories.name as category_name,
-        categories.sort_order as category_sort_order
-      FROM items
-      LEFT JOIN categories ON items.category_id = categories.id
-      ORDER BY
-        CASE WHEN items.checked = 1 THEN 1 ELSE 0 END,
-        categories.sort_order ASC,
-        items.position_in_list ASC,
-        items.created_at ASC
-    `).all();
-
-    eventEmitter.emitChange('items-reordered', updatedItems, changeId);
-
-    res.json(updatedItems);
-  } catch (error) {
-    console.error('Error reordering items:', error);
-    res.status(500).json({ error: 'Failed to reorder items' });
+router.put('/reorder', handler('reordering items', (req, res) => {
+  const { items, changeId } = req.body;
+  if (!Array.isArray(items)) {
+    throw badRequest('items must be an array');
   }
-});
+
+  const db = getDatabase();
+  const update = db.prepare('UPDATE items SET position_in_list = ? WHERE id = ?');
+  db.transaction(() => {
+    for (const { id, position_in_list } of items) {
+      update.run(position_in_list, id);
+    }
+  })();
+
+  const updatedItems = allItems(db);
+  eventEmitter.emitChange('items-reordered', updatedItems, changeId);
+  res.json(updatedItems);
+}));
+
+/**
+ * DELETE /api/items/checked
+ * Delete checked items. When `ids` is supplied only those items are removed,
+ * which keeps an offline client's replayed request from deleting items that
+ * somebody else checked in the meantime.
+ * Note: must come before /:id so "checked" is not matched as an id
+ */
+router.delete('/checked', handler('deleting checked items', (req, res) => {
+  const { ids, changeId } = req.body ?? {};
+  const db = getDatabase();
+
+  let deletedIds;
+  if (Array.isArray(ids)) {
+    const placeholders = Array(ids.length).fill('?').join(',');
+    deletedIds = ids.length === 0
+      ? []
+      : db.prepare(`SELECT id FROM items WHERE checked = 1 AND id IN (${placeholders})`)
+          .all(...ids)
+          .map((row) => row.id);
+  } else {
+    deletedIds = db.prepare('SELECT id FROM items WHERE checked = 1').all().map((row) => row.id);
+  }
+
+  if (deletedIds.length > 0) {
+    const placeholders = Array(deletedIds.length).fill('?').join(',');
+    db.prepare(`DELETE FROM items WHERE id IN (${placeholders})`).run(...deletedIds);
+  }
+
+  eventEmitter.emitChange('items-deleted-checked', { ids: deletedIds }, changeId);
+  res.json({ message: 'Checked items deleted', deletedCount: deletedIds.length });
+}));
 
 /**
  * PUT /api/items/:id
  * Update an item
  */
-router.put('/:id', (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, description, amount, category_id, changeId } = req.body;
+router.put('/:id', handler('updating item', (req, res) => {
+  const { id } = req.params;
+  const { name, description, amount, category_id, changeId } = req.body;
 
-    if (!name || name.trim().length === 0) {
-      return res.status(400).json({ error: 'Item name is required' });
-    }
-
-    const db = getDatabase();
-    const result = db.prepare(`
-      UPDATE items
-      SET name = ?, description = ?, amount = ?, category_id = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(
-      name.trim(),
-      description?.trim() || null,
-      amount?.trim() || null,
-      category_id || null,
-      id
-    );
-
-    if (result.changes === 0) {
-      return res.status(404).json({ error: 'Item not found' });
-    }
-
-    // Learn/update the category mapping
-    if (category_id) {
-      learnCategoryMapping(name, category_id);
-    }
-
-    // Fetch the updated item with category info
-    const updatedItem = db.prepare(`
-      SELECT
-        items.*,
-        categories.name as category_name,
-        categories.sort_order as category_sort_order
-      FROM items
-      LEFT JOIN categories ON items.category_id = categories.id
-      WHERE items.id = ?
-    `).get(id);
-
-    // Emit event for real-time updates
-    eventEmitter.emitChange('item-updated', updatedItem, changeId);
-
-    res.json(updatedItem);
-  } catch (error) {
-    console.error('Error updating item:', error);
-    res.status(500).json({ error: 'Failed to update item' });
+  if (!name || name.trim().length === 0) {
+    throw badRequest('Item name is required');
   }
-});
+
+  const db = getDatabase();
+  const result = db.prepare(`
+    UPDATE items
+    SET name = ?, description = ?, amount = ?, category_id = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(
+    name.trim(),
+    description?.trim() || null,
+    amount?.trim() || null,
+    category_id || null,
+    id
+  );
+
+  if (result.changes === 0) {
+    throw notFound('Item not found');
+  }
+
+  if (category_id) {
+    learnCategoryMapping(name, category_id);
+  }
+
+  const updatedItem = itemById(db, id);
+  eventEmitter.emitChange('item-updated', updatedItem, changeId);
+  res.json(updatedItem);
+}));
 
 /**
  * PATCH /api/items/:id/check
- * Toggle the checked status of an item
+ * Toggle the checked status of an item, repositioning it within its category:
+ * newly checked items go to the top of the checked group, unchecked items to
+ * the bottom of the unchecked group.
  */
-router.patch('/:id/check', (req, res) => {
-  try {
-    const { id } = req.params;
-    const { checked, changeId } = req.body;
+router.patch('/:id/check', handler('toggling item check', (req, res) => {
+  const { id } = req.params;
+  const { checked, changeId } = req.body;
 
-    if (typeof checked !== 'boolean') {
-      return res.status(400).json({ error: 'checked must be a boolean' });
-    }
+  if (typeof checked !== 'boolean') {
+    throw badRequest('checked must be a boolean');
+  }
 
-    const db = getDatabase();
+  const db = getDatabase();
+  const item = db.prepare('SELECT category_id FROM items WHERE id = ?').get(id);
+  if (!item) {
+    throw notFound('Item not found');
+  }
 
-    const item = db.prepare('SELECT category_id FROM items WHERE id = ?').get(id);
-    if (item) {
-      if (!checked) {
-        // When unchecking, move item to bottom of unchecked items in its category
-        const maxPos = db.prepare(
-          'SELECT COALESCE(MAX(position_in_list), 0) as max_pos FROM items WHERE checked = 0 AND category_id = ?'
-        ).get(item.category_id);
-        db.prepare('UPDATE items SET position_in_list = ? WHERE id = ?').run((maxPos?.max_pos ?? 0) + 1, id);
-      } else {
-        // When checking, move item to top of checked items in its category
-        const minPos = db.prepare(
-          'SELECT COALESCE(MIN(position_in_list), 0) as min_pos FROM items WHERE checked = 1 AND category_id = ?'
-        ).get(item.category_id);
-        db.prepare('UPDATE items SET position_in_list = ? WHERE id = ?').run((minPos?.min_pos ?? 0) - 1, id);
-      }
-    }
+  const boundary = db.prepare(`
+    SELECT COALESCE(MAX(position_in_list), 0) as max_pos,
+           COALESCE(MIN(position_in_list), 0) as min_pos
+    FROM items
+    WHERE checked = ? AND category_id IS ?
+  `).get(checked ? 1 : 0, item.category_id);
 
-    const result = db.prepare(`
+  const position = checked ? boundary.min_pos - 1 : boundary.max_pos + 1;
+
+  db.transaction(() => {
+    db.prepare(`
       UPDATE items
-      SET checked = ?, updated_at = CURRENT_TIMESTAMP
+      SET checked = ?, position_in_list = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(checked ? 1 : 0, id);
+    `).run(checked ? 1 : 0, position, id);
+  })();
 
-    if (result.changes === 0) {
-      return res.status(404).json({ error: 'Item not found' });
-    }
-
-    // Fetch the updated item with category info
-    const updatedItem = db.prepare(`
-      SELECT
-        items.*,
-        categories.name as category_name,
-        categories.sort_order as category_sort_order
-      FROM items
-      LEFT JOIN categories ON items.category_id = categories.id
-      WHERE items.id = ?
-    `).get(id);
-
-    // Emit event for real-time updates
-    eventEmitter.emitChange('item-updated', updatedItem, changeId);
-
-    res.json(updatedItem);
-  } catch (error) {
-    console.error('Error toggling item check:', error);
-    res.status(500).json({ error: 'Failed to toggle item check status' });
-  }
-});
-
-/**
- * DELETE /api/items/checked
- * Delete all checked items
- * Note: This must come before /:id route to avoid matching "checked" as an id
- */
-router.delete('/checked', (req, res) => {
-  try {
-    const db = getDatabase();
-    const { changeId } = req.body;
-
-    const result = db
-      .prepare('DELETE FROM items WHERE checked = 1')
-      .run();
-
-    // Emit event for real-time updates
-    eventEmitter.emitChange('items-deleted-checked', { deletedCount: result.changes }, changeId);
-
-    res.json({
-      message: 'Checked items deleted',
-      deletedCount: result.changes
-    });
-  } catch (error) {
-    console.error('Error deleting checked items:', error);
-    res.status(500).json({ error: 'Failed to delete checked items' });
-  }
-});
+  const updatedItem = itemById(db, id);
+  eventEmitter.emitChange('item-updated', updatedItem, changeId);
+  res.json(updatedItem);
+}));
 
 /**
  * DELETE /api/items/:id
  * Delete a single item
  */
-router.delete('/:id', (req, res) => {
-  try {
-    const { id } = req.params;
-    const { changeId } = req.body;
-    const db = getDatabase();
+router.delete('/:id', handler('deleting item', (req, res) => {
+  const { id } = req.params;
+  const { changeId } = req.body ?? {};
 
-    const result = db
-      .prepare('DELETE FROM items WHERE id = ?')
-      .run(id);
-
-    if (result.changes === 0) {
-      return res.status(404).json({ error: 'Item not found' });
-    }
-
-    // Emit event for real-time updates
-    eventEmitter.emitChange('item-deleted', { id: parseInt(id) }, changeId);
-
-    res.status(204).send();
-  } catch (error) {
-    console.error('Error deleting item:', error);
-    res.status(500).json({ error: 'Failed to delete item' });
+  const result = getDatabase().prepare('DELETE FROM items WHERE id = ?').run(id);
+  if (result.changes === 0) {
+    throw notFound('Item not found');
   }
-});
+
+  eventEmitter.emitChange('item-deleted', { id: parseInt(id, 10) }, changeId);
+  res.status(204).send();
+}));
 
 export default router;
