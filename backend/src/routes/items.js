@@ -84,6 +84,9 @@ router.put('/reorder', handler('reordering items', (req, res) => {
   const update = db.prepare('UPDATE items SET position_in_list = ? WHERE id = ?');
   db.transaction(() => {
     for (const { id, position_in_list } of items) {
+      if (id == null || position_in_list == null) {
+        throw badRequest('Each item must have id and position_in_list');
+      }
       update.run(position_in_list, id);
     }
   })();

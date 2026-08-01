@@ -5,7 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', 'coverage']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [
@@ -29,6 +29,14 @@ export default defineConfig([
         'error',
         { varsIgnorePattern: '^[A-Z_]', argsIgnorePattern: '^[A-Z_]' },
       ],
+    },
+  },
+  {
+    // Test files also run against Node globals (fs, process, global) and use
+    // the jsdom/node hybrid environment vitest provides.
+    files: ['**/*.test.{js,jsx}', 'src/test/**/*.{js,jsx}', 'vitest.config.js'],
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.node },
     },
   },
 ])

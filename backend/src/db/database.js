@@ -28,11 +28,11 @@ export function initializeDatabase(dbPath) {
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = NORMAL');
 
-  // Base schema is idempotent (CREATE TABLE / INDEX IF NOT EXISTS)
-  const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf-8');
-  db.exec(schema);
-
+  // Tables first (idempotent CREATE TABLE IF NOT EXISTS), then migrations,
+  // then indexes -- an index may cover a column a migration has just added.
+  db.exec(readFileSync(join(__dirname, 'schema.sql'), 'utf-8'));
   runMigrations(db);
+  db.exec(readFileSync(join(__dirname, 'indexes.sql'), 'utf-8'));
 
   console.log('Database initialized successfully');
   return db;

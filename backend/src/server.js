@@ -1,36 +1,13 @@
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import { existsSync } from 'fs';
-import express from 'express';
-import cors from 'cors';
 import dotenv from 'dotenv';
+import { createApp } from './app.js';
 import { initializeDatabase, closeDatabase } from './db/database.js';
 import { seedCategories } from './db/seed.js';
-import categoriesRouter from './routes/categories.js';
-import itemsRouter from './routes/items.js';
-import recipesRouter from './routes/recipes.js';
-import eventsRouter from './routes/events.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// Load environment variables
 dotenv.config();
 
-const app = express();
 const PORT = process.env.PORT || 3000;
 const DATABASE_PATH = process.env.DATABASE_PATH || './data/grocery.db';
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-
-// Request logging middleware
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  next();
-});
-
-// Initialize database
 try {
   initializeDatabase(DATABASE_PATH);
   seedCategories();
@@ -39,47 +16,8 @@ try {
   process.exit(1);
 }
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+const app = createApp();
 
-// API routes
-app.use('/api/categories', categoriesRouter);
-app.use('/api/items', itemsRouter);
-app.use('/api/recipes', recipesRouter);
-app.use('/api/events', eventsRouter);
-
-// Unknown API routes must 404 as JSON rather than falling through to the SPA,
-// which would hand the client an HTML body it cannot parse.
-app.use('/api', (req, res) => {
-  res.status(404).json({ error: 'Route not found' });
-});
-
-// Serve frontend in production
-const publicPath = join(__dirname, '..', 'public');
-if (existsSync(publicPath)) {
-  app.use(express.static(publicPath));
-  app.get('*', (req, res) => {
-    res.sendFile(join(publicPath, 'index.html'));
-  });
-} else {
-  // 404 handler (dev mode, no frontend build)
-  app.use((req, res) => {
-    res.status(404).json({ error: 'Route not found' });
-  });
-}
-
-// Error handler
-app.use((err, req, res, next) => {
-  console.error('Server error:', err);
-  res.status(500).json({
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined
-  });
-});
-
-// Start server
 const server = app.listen(PORT, () => {
   console.log('Grocery App API server listening');
   console.log(`  Port:        ${PORT}`);
@@ -87,7 +25,6 @@ const server = app.listen(PORT, () => {
   console.log(`  Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
-// Graceful shutdown
 const gracefulShutdown = () => {
   console.log('\nReceived shutdown signal, closing server...');
   server.close(() => {
@@ -96,7 +33,7 @@ const gracefulShutdown = () => {
     process.exit(0);
   });
 
-  // Force close after 10 seconds
+  // Force close if connections (e.g. open SSE streams) do not drain
   setTimeout(() => {
     console.error('Forced shutdown after timeout');
     process.exit(1);

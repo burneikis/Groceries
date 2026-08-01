@@ -1,4 +1,6 @@
 import 'fake-indexeddb/auto';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError, NetworkError, categoriesApi, itemsApi, recipesApi } from './api';
@@ -29,6 +31,24 @@ beforeEach(async () => {
 });
 
 afterEach(() => vi.restoreAllMocks());
+
+describe('registry consistency', () => {
+  it('has a replay handler for every action the store enqueues', async () => {
+    // Guards the original bug: the store queued 'items.reorder' and
+    // 'recipes.removeFromList', but sync.js had no handler and dropped them.
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/store/useStore.js'),
+      'utf-8'
+    );
+    const enqueued = [...source.matchAll(/action:\s*'([a-z]+\.[A-Za-z]+)'/g)].map((m) => m[1]);
+
+    expect(enqueued.length).toBeGreaterThan(0);
+
+    for (const action of new Set(enqueued)) {
+      await expect(queueMutation(action, {})).resolves.not.toThrow();
+    }
+  });
+});
 
 describe('queueMutation', () => {
   it('rejects actions that have no replay handler', async () => {

@@ -6,15 +6,28 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
+    "dev": "node --watch src/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
-  "keywords": ["grocery", "pwa", "express", "sqlite"],
+  "keywords": [
+    "grocery",
+    "pwa",
+    "express",
+    "sqlite"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "express": "^4.18.2",
     "better-sqlite3": "^12.4.1",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.10",
+    "supertest": "^7.2.2",
+    "vitest": "^4.1.10"
   }
 }
