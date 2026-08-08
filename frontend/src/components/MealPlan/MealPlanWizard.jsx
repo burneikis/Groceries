@@ -7,6 +7,7 @@ import {
   buildReviewList,
   lastCookedLabel,
   nextFromPool,
+  rejectRecipe,
 } from './mealPlanUtils'
 
 const COUNT_OPTIONS = [3, 4, 5]
@@ -65,12 +66,12 @@ export default function MealPlanWizard() {
     const replacement = nextFromPool(pool, selected, rejected)
     if (!replacement) return
     setSelected(selected.map((r) => (r.id === recipeId ? replacement : r)))
-    setRejected((prev) => new Set(prev).add(recipeId))
+    setRejected((prev) => rejectRecipe(prev, recipeId))
   }
 
   const remove = (recipeId) => {
     setSelected(selected.filter((r) => r.id !== recipeId))
-    setRejected((prev) => new Set(prev).add(recipeId))
+    setRejected((prev) => rejectRecipe(prev, recipeId))
   }
 
   const addAnother = () => {

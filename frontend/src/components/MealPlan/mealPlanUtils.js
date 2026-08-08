@@ -56,20 +56,43 @@ export function buildReviewList(recipes, items = []) {
 }
 
 /**
- * The stalest pool recipe that is not already chosen and not recently
- * rejected (swapped/removed) in this wizard session. Falls back to allowing
- * rejected recipes if nothing else is left in the pool, so swapping never
- * silently stops working once every candidate has been rejected once.
+ * The stalest pool recipe that is not already chosen and not rejected
+ * (swapped/removed) in this wizard session.
+ *
+ * Once every eligible candidate has been rejected we fall back to the
+ * least-recently-rejected one rather than giving up, so swapping never
+ * silently stops working. `rejected` is insertion-ordered (see
+ * `rejectRecipe`), which makes that fallback rotate through the whole pool
+ * instead of ping-ponging between the first two entries.
  *
  * @param {object[]} pool - Pool ordered stalest first
  * @param {object[]} selected
- * @param {Set<number>} [rejected] - Ids recently swapped/removed this session
+ * @param {Set<number>} [rejected] - Ids swapped/removed this session, oldest first
  * @returns {object|undefined}
  */
 export function nextFromPool(pool, selected, rejected = new Set()) {
   const chosen = new Set(selected.map((r) => r.id))
   const eligible = pool.filter((r) => !chosen.has(r.id))
-  return (
-    eligible.find((r) => !rejected.has(r.id)) ?? eligible[0]
-  )
+
+  const fresh = eligible.find((r) => !rejected.has(r.id))
+  if (fresh) return fresh
+
+  const order = [...rejected]
+  return eligible
+    .slice()
+    .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))[0]
+}
+
+/**
+ * Record a recipe as rejected for this wizard session, moving it to the back
+ * of the LRU queue so it is the last thing re-offered.
+ * @param {Set<number>} rejected
+ * @param {number} recipeId
+ * @returns {Set<number>} a new Set
+ */
+export function rejectRecipe(rejected, recipeId) {
+  const next = new Set(rejected)
+  next.delete(recipeId)
+  next.add(recipeId)
+  return next
 }

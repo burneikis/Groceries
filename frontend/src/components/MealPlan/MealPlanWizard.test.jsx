@@ -109,6 +109,39 @@ describe('suggestions', () => {
     expect(screen.getByText('Beetroot')).toBeInTheDocument();
   });
 
+  it('rotates through the whole pool once every option has been rejected', async () => {
+    // One selected slot and a three-recipe pool, so repeated swaps exhaust
+    // every candidate. Past that point recipes have to be re-offered, but the
+    // least-recently-rejected one must come first: a naive "stalest first"
+    // fallback ping-pongs between Chilli and Pasta and never offers Beetroot.
+    const beetroot = recipe(4, 'Beetroot', ['Beetroot']);
+    fetchMealPlanSuggestions.mockResolvedValue({
+      suggestions: [chilli],
+      pool: [chilli, pasta, beetroot],
+    });
+
+    const user = userEvent.setup();
+    renderWizard();
+    await start(user);
+
+    const swapOnce = async () => user.click(screen.getByRole('button', { name: 'Swap' }));
+
+    await swapOnce();
+    expect(screen.getByText('Pasta')).toBeInTheDocument();
+
+    await swapOnce();
+    expect(screen.getByText('Beetroot')).toBeInTheDocument();
+
+    // Everything is now rejected; the oldest rejection (Chilli) comes back.
+    await swapOnce();
+    expect(screen.getByText('Chilli')).toBeInTheDocument();
+
+    // ...and the rotation continues rather than bouncing back to Beetroot.
+    await swapOnce();
+    expect(screen.queryByText('Beetroot')).not.toBeInTheDocument();
+    expect(screen.getByText('Pasta')).toBeInTheDocument();
+  });
+
   it('removes a suggestion', async () => {
     const user = userEvent.setup();
     renderWizard();
