@@ -56,12 +56,20 @@ export function buildReviewList(recipes, items = []) {
 }
 
 /**
- * The stalest pool recipe that is not already chosen.
+ * The stalest pool recipe that is not already chosen and not recently
+ * rejected (swapped/removed) in this wizard session. Falls back to allowing
+ * rejected recipes if nothing else is left in the pool, so swapping never
+ * silently stops working once every candidate has been rejected once.
+ *
  * @param {object[]} pool - Pool ordered stalest first
  * @param {object[]} selected
+ * @param {Set<number>} [rejected] - Ids recently swapped/removed this session
  * @returns {object|undefined}
  */
-export function nextFromPool(pool, selected) {
+export function nextFromPool(pool, selected, rejected = new Set()) {
   const chosen = new Set(selected.map((r) => r.id))
-  return pool.find((r) => !chosen.has(r.id))
+  const eligible = pool.filter((r) => !chosen.has(r.id))
+  return (
+    eligible.find((r) => !rejected.has(r.id)) ?? eligible[0]
+  )
 }

@@ -29,6 +29,7 @@ export default function MealPlanWizard() {
   const [selected, setSelected] = useState(draft?.selected ?? [])
   const [pool, setPool] = useState(draft?.pool ?? [])
   const [skipped, setSkipped] = useState(() => new Set(draft?.skipped ?? []))
+  const [rejected, setRejected] = useState(() => new Set(draft?.rejected ?? []))
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
 
@@ -40,9 +41,9 @@ export default function MealPlanWizard() {
     }
     sessionStorage.setItem(
       DRAFT_KEY,
-      JSON.stringify({ step, count, selected, pool, skipped: [...skipped] })
+      JSON.stringify({ step, count, selected, pool, skipped: [...skipped], rejected: [...rejected] })
     )
-  }, [step, count, selected, pool, skipped])
+  }, [step, count, selected, pool, skipped, rejected])
 
   const load = async (wanted) => {
     setBusy(true)
@@ -51,6 +52,7 @@ export default function MealPlanWizard() {
       setSelected(suggestions)
       setPool(fresh)
       setSkipped(new Set())
+      setRejected(new Set())
       setStep('suggestions')
     } catch {
       // The error message lives in the store and is rendered below.
@@ -60,15 +62,19 @@ export default function MealPlanWizard() {
   }
 
   const swap = (recipeId) => {
-    const replacement = nextFromPool(pool, selected)
+    const replacement = nextFromPool(pool, selected, rejected)
     if (!replacement) return
     setSelected(selected.map((r) => (r.id === recipeId ? replacement : r)))
+    setRejected((prev) => new Set(prev).add(recipeId))
   }
 
-  const remove = (recipeId) => setSelected(selected.filter((r) => r.id !== recipeId))
+  const remove = (recipeId) => {
+    setSelected(selected.filter((r) => r.id !== recipeId))
+    setRejected((prev) => new Set(prev).add(recipeId))
+  }
 
   const addAnother = () => {
-    const extra = nextFromPool(pool, selected)
+    const extra = nextFromPool(pool, selected, rejected)
     if (extra) setSelected([...selected, extra])
   }
 
@@ -209,7 +215,7 @@ export default function MealPlanWizard() {
           <div className="flex gap-2 pt-1">
             <button
               onClick={addAnother}
-              disabled={!nextFromPool(pool, selected)}
+              disabled={!nextFromPool(pool, selected, rejected)}
               className="flex-1 py-2 rounded-xl border border-gray-200 dark:border-slate-700 text-sm font-medium text-gray-700 dark:text-slate-300 disabled:opacity-40"
             >
               Add another

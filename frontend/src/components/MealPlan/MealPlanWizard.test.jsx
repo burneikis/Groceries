@@ -86,6 +86,29 @@ describe('suggestions', () => {
     expect(screen.getByText('Pasta')).toBeInTheDocument();
   });
 
+  it('does not immediately re-offer a recipe just swapped out', async () => {
+    // Only two pool candidates beyond the initial selection: Pasta and
+    // Beetroot. Swapping Chilli should offer Pasta, and swapping the same
+    // slot again should move on to Beetroot rather than bouncing back to
+    // Chilli, even though Chilli is stalest again once it leaves `selected`.
+    const beetroot = recipe(4, 'Beetroot', ['Beetroot']);
+    fetchMealPlanSuggestions.mockResolvedValue({
+      suggestions: [chilli, curry],
+      pool: [chilli, pasta, beetroot, curry],
+    });
+
+    const user = userEvent.setup();
+    renderWizard();
+    await start(user);
+
+    await user.click(screen.getAllByRole('button', { name: 'Swap' })[0]);
+    expect(screen.getByText('Pasta')).toBeInTheDocument();
+
+    await user.click(screen.getAllByRole('button', { name: 'Swap' })[0]);
+    expect(screen.queryByText('Pasta')).not.toBeInTheDocument();
+    expect(screen.getByText('Beetroot')).toBeInTheDocument();
+  });
+
   it('removes a suggestion', async () => {
     const user = userEvent.setup();
     renderWizard();
