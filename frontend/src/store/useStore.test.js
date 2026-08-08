@@ -13,7 +13,10 @@ vi.mock('../services/api', async (importOriginal) => {
     itemsApi: stub([
       'getAll', 'create', 'update', 'toggleCheck', 'delete', 'deleteChecked', 'reorder',
     ]),
-    recipesApi: stub(['getAll', 'create', 'update', 'delete', 'addToList', 'removeFromList']),
+    recipesApi: stub([
+      'getAll', 'create', 'update', 'delete', 'addToList', 'removeFromList', 'setRegular',
+    ]),
+    mealPlanApi: stub(['getSuggestions', 'confirm']),
   };
 });
 
@@ -21,6 +24,7 @@ let useStore;
 let categoriesApi;
 let itemsApi;
 let recipesApi;
+let mealPlanApi;
 let db;
 
 /** Fresh store + IndexedDB for every test. */
@@ -29,7 +33,7 @@ beforeEach(async () => {
   vi.resetModules();
   vi.clearAllMocks();
 
-  ({ categoriesApi, itemsApi, recipesApi } = await import('../services/api'));
+  ({ categoriesApi, itemsApi, recipesApi, mealPlanApi } = await import('../services/api'));
   db = await import('../services/db');
   useStore = (await import('./useStore')).default;
 
@@ -465,6 +469,37 @@ describe('recipes', () => {
     });
   });
 
+  it('toggles the regular flag optimistically', async () => {
+    useStore.setState({ recipes: [{ id: 7, name: 'Chilli', is_regular: 0 }] });
+    recipesApi.setRegular.mockResolvedValue({ id: 7, name: 'Chilli', is_regular: 1 });
+
+    await state().toggleRecipeRegular(7, true);
+
+    expect(recipesApi.setRegular).toHaveBeenCalledWith(7, true, expect.any(String));
+    expect(state().recipes[0].is_regular).toBe(1);
+  });
+
+  it('reverts the regular flag when the server rejects it', async () => {
+    useStore.setState({ recipes: [{ id: 7, name: 'Chilli', is_regular: 0 }] });
+    recipesApi.setRegular.mockRejectedValue(new ApiError(404, 'Recipe not found'));
+
+    await expect(state().toggleRecipeRegular(7, true)).rejects.toThrow('Recipe not found');
+    expect(state().recipes[0].is_regular).toBe(0);
+  });
+
+  it('queues the regular flag when offline', async () => {
+    useStore.setState({ recipes: [{ id: 7, name: 'Chilli', is_regular: 0 }] });
+    recipesApi.setRegular.mockRejectedValue(offline());
+
+    await state().toggleRecipeRegular(7, true);
+
+    expect(state().recipes[0].is_regular).toBe(1);
+    expect((await db.getSyncQueue())[0]).toMatchObject({
+      action: 'recipes.setRegular',
+      data: { id: 7, isRegular: true },
+    });
+  });
+
   it('creates a placeholder recipe offline', async () => {
     recipesApi.create.mockRejectedValue(offline());
 
@@ -472,6 +507,51 @@ describe('recipes', () => {
 
     expect(recipe.id).toBeLessThan(0);
     expect((await db.getSyncQueue())[0].action).toBe('recipes.create');
+  });
+});
+
+describe('meal plan', () => {
+  it('stores suggestions and the pool', async () => {
+    mealPlanApi.getSuggestions.mockResolvedValue({ suggestions: [{ id: 1 }], pool: [{ id: 1 }] });
+
+    await state().fetchMealPlanSuggestions(4);
+
+    expect(mealPlanApi.getSuggestions).toHaveBeenCalledWith(4);
+    expect(state().mealPlan).toMatchObject({ suggestions: [{ id: 1 }], loading: false });
+  });
+
+  it('explains that suggestions need a connection when offline', async () => {
+    mealPlanApi.getSuggestions.mockRejectedValue(offline());
+
+    await expect(state().fetchMealPlanSuggestions(4)).rejects.toThrow();
+    expect(state().mealPlan.error).toMatch(/connection/i);
+  });
+
+  it('merges confirmed items and refreshed recipes into state', async () => {
+    useStore.setState({ items: [], recipes: [{ id: 1, name: 'Chilli', plan_count: 0 }] });
+    mealPlanApi.confirm.mockResolvedValue({
+      itemsAdded: 1,
+      items: [{ id: 5, name: 'Beans', recipe_id: 1 }],
+      recipes: [{ id: 1, name: 'Chilli', plan_count: 1 }],
+    });
+
+    const result = await state().confirmMealPlan([1], []);
+
+    expect(result.itemsAdded).toBe(1);
+    expect(state().items).toHaveLength(1);
+    expect(state().recipes[0].plan_count).toBe(1);
+  });
+
+  it('queues the confirmation when offline', async () => {
+    mealPlanApi.confirm.mockRejectedValue(offline());
+
+    const result = await state().confirmMealPlan([1, 2], [3]);
+
+    expect(result.queued).toBe(true);
+    expect((await db.getSyncQueue())[0]).toMatchObject({
+      action: 'mealplan.confirm',
+      data: { recipeIds: [1, 2], excludedIngredientIds: [3] },
+    });
   });
 });
 

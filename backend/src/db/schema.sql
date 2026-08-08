@@ -26,7 +26,19 @@ CREATE TABLE IF NOT EXISTS items (
 CREATE TABLE IF NOT EXISTS recipes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
+  is_regular BOOLEAN DEFAULT 0,
+  last_planned_at DATETIME,
+  plan_count INTEGER DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Log of dinner-wizard picks; recipes.last_planned_at/plan_count are
+-- denormalised conveniences derived from these rows.
+CREATE TABLE IF NOT EXISTS recipe_plan_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  recipe_id INTEGER NOT NULL,
+  planned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
 );
 
 -- Recipe ingredients (template for adding to list)

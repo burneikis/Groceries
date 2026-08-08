@@ -120,4 +120,17 @@ export const recipesApi = {
     method: 'DELETE',
     body: JSON.stringify({ changeId }),
   }),
+  setRegular: (id, isRegular, changeId) => request(`/recipes/${id}/regular`, {
+    method: 'PATCH',
+    body: JSON.stringify({ is_regular: isRegular, changeId }),
+  }),
+};
+
+// Weekly dinner plan
+export const mealPlanApi = {
+  getSuggestions: (count) => request(`/mealplan/suggestions?count=${count}`),
+  confirm: (recipeIds, excludedIngredientIds, changeId) => request('/mealplan/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ recipeIds, excludedIngredientIds, changeId }),
+  }),
 };

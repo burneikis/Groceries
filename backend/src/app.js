@@ -6,6 +6,7 @@ import cors from 'cors';
 import categoriesRouter from './routes/categories.js';
 import itemsRouter from './routes/items.js';
 import recipesRouter from './routes/recipes.js';
+import mealplanRouter from './routes/mealplan.js';
 import eventsRouter from './routes/events.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -41,6 +42,7 @@ export function createApp({ logRequests = true, publicPath } = {}) {
   app.use('/api/categories', categoriesRouter);
   app.use('/api/items', itemsRouter);
   app.use('/api/recipes', recipesRouter);
+  app.use('/api/mealplan', mealplanRouter);
   app.use('/api/events', eventsRouter);
 
   // Unknown API routes must 404 as JSON rather than falling through to the SPA,

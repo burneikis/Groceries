@@ -1,5 +1,5 @@
 import { addToSyncQueue, getSyncQueue, removeSyncEntry, updateSyncEntry } from './db';
-import { ApiError, NetworkError, categoriesApi, itemsApi, recipesApi } from './api';
+import { ApiError, NetworkError, categoriesApi, itemsApi, mealPlanApi, recipesApi } from './api';
 
 /**
  * Number of times a queued mutation is retried before it is discarded.
@@ -82,6 +82,14 @@ const ACTIONS = {
   'recipes.removeFromList': {
     run: (d, changeId) => recipesApi.removeFromList(d.id, changeId),
     refs: ['id'],
+  },
+  'recipes.setRegular': {
+    run: (d, changeId) => recipesApi.setRegular(d.id, d.isRegular, changeId),
+    refs: ['id'],
+  },
+  'mealplan.confirm': {
+    run: (d, changeId) => mealPlanApi.confirm(d.recipeIds, d.excludedIngredientIds, changeId),
+    refs: ['recipeIds[]'],
   },
 };
 

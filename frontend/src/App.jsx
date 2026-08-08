@@ -8,6 +8,7 @@ import GroceryListView from './components/GroceryList/GroceryListView'
 import RecipesView from './components/Recipes/RecipesView'
 import RecipeEditorView from './components/Recipes/RecipeEditorView'
 import SettingsView from './components/Settings/SettingsView'
+import MealPlanWizard from './components/MealPlan/MealPlanWizard'
 import useStore from './store/useStore'
 
 export default function App() {
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="/recipes" element={<RecipesView />} />
           <Route path="/recipes/new" element={<RecipeEditorView />} />
           <Route path="/recipes/:id" element={<RecipeEditorView />} />
+          <Route path="/dinner" element={<MealPlanWizard />} />
           <Route path="/settings" element={<SettingsView />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -24,6 +24,13 @@ export default function RecipeEditorView() {
     }
     return []
   })
+  const [isRegular, setIsRegular] = useState(() => {
+    if (isNew) {
+      const draft = sessionStorage.getItem('recipe_draft_new')
+      return draft ? Boolean(JSON.parse(draft).is_regular) : false
+    }
+    return false
+  })
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(!isNew)
 
@@ -35,13 +42,15 @@ export default function RecipeEditorView() {
     if (!isNew) {
       const draft = sessionStorage.getItem(draftKey)
       if (draft) {
-        const { name: draftName, ingredients: draftIngredients } = JSON.parse(draft)
+        const { name: draftName, ingredients: draftIngredients, is_regular } = JSON.parse(draft)
         setName(draftName)
         setIngredients(draftIngredients)
+        setIsRegular(Boolean(is_regular))
         setLoading(false)
       } else {
         recipesApi.getById(id).then((recipe) => {
           setName(recipe.name)
+          setIsRegular(Boolean(recipe.is_regular))
           setIngredients(
             recipe.ingredients.map((ing) => ({
               name: ing.name,
@@ -59,8 +68,8 @@ export default function RecipeEditorView() {
 
   useEffect(() => {
     if (loading) return
-    sessionStorage.setItem(draftKey, JSON.stringify({ name, ingredients }))
-  }, [name, ingredients, draftKey, loading])
+    sessionStorage.setItem(draftKey, JSON.stringify({ name, ingredients, is_regular: isRegular }))
+  }, [name, ingredients, isRegular, draftKey, loading])
 
   const addIngredient = () => {
     setIngredients([{ name: '', amount: '', category_id: '' }, ...ingredients])
@@ -98,6 +107,7 @@ export default function RecipeEditorView() {
 
     const recipe = {
       name: name.trim(),
+      is_regular: isRegular,
       ingredients: ingredients
         .filter((ing) => ing.name.trim())
         .map((ing, i) => ({
@@ -168,6 +178,18 @@ export default function RecipeEditorView() {
           className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 text-lg font-medium focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
           autoFocus={isNew}
         />
+
+        <label className="flex items-center gap-3 bg-white dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-slate-700 p-3">
+          <input
+            type="checkbox"
+            checked={isRegular}
+            onChange={(e) => setIsRegular(e.target.checked)}
+            className="w-4 h-4 accent-amber-500"
+          />
+          <span className="text-sm text-gray-700 dark:text-slate-300">
+            Regular dinner - include in weekly suggestions
+          </span>
+        </label>
 
         <div>
           <div className="flex items-center justify-between mb-3">

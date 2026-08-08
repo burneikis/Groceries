@@ -47,6 +47,19 @@ const MIGRATIONS = [
     database.exec('ALTER TABLE items ADD COLUMN recipe_id INTEGER');
     database.exec('ALTER TABLE items ADD COLUMN recipe_name TEXT');
   },
+  (database) => {
+    database.exec('ALTER TABLE recipes ADD COLUMN is_regular BOOLEAN DEFAULT 0');
+    database.exec('ALTER TABLE recipes ADD COLUMN last_planned_at DATETIME');
+    database.exec('ALTER TABLE recipes ADD COLUMN plan_count INTEGER DEFAULT 0');
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS recipe_plan_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recipe_id INTEGER NOT NULL,
+        planned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
+      )
+    `);
+  },
 ];
 
 /**

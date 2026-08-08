@@ -117,6 +117,28 @@ describe('migrations', () => {
     expect(db.prepare('SELECT name FROM items').get().name).toBe('Legacy item');
   });
 
+  it('adds the meal-plan columns and history table to a legacy recipes table', () => {
+    const path = dbFile();
+    const legacy = new Database(path);
+    legacy.exec(`
+      CREATE TABLE recipes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    legacy.prepare("INSERT INTO recipes (name) VALUES ('Legacy recipe')").run();
+    legacy.pragma('user_version = 1'); // migration 1 (items columns) already done
+    legacy.close();
+
+    const db = initializeDatabase(path);
+    const columns = db.pragma('table_info(recipes)').map((c) => c.name);
+
+    expect(columns).toEqual(expect.arrayContaining(['is_regular', 'last_planned_at', 'plan_count']));
+    expect(db.prepare('SELECT name FROM recipes').get().name).toBe('Legacy recipe');
+    expect(() => db.prepare('SELECT * FROM recipe_plan_history').all()).not.toThrow();
+  });
+
   it('tolerates a database that already has the columns but no user_version', () => {
     const path = dbFile();
     initializeDatabase(path);

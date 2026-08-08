@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { NetworkError, categoriesApi, itemsApi, recipesApi } from '../services/api';
+import { NetworkError, categoriesApi, itemsApi, mealPlanApi, recipesApi } from '../services/api';
 import * as db from '../services/db';
 import {
   createTempId,
@@ -93,6 +93,7 @@ const useStore = create((set, get) => {
     error: null,
     isOnline: navigator.onLine,
     pendingSyncs: 0,
+    mealPlan: { suggestions: [], pool: [], loading: false, error: null },
     theme: 'system', // 'light' | 'dark' | 'system'
     resolvedTheme: 'light',
     ownChangeIds: new Set(), // Our own changes, to suppress SSE echoes
@@ -547,6 +548,77 @@ const useStore = create((set, get) => {
         },
         offline: async () => ({ items: [] }),
         queue: () => ({ action: 'recipes.addToList', data: { id } }),
+      }),
+
+    /** Mark/unmark a recipe as a weekly regular (optimistic, offline-queued). */
+    toggleRecipeRegular: (id, value) => {
+      const isRegular = value ? 1 : 0;
+      const previous = get().recipes.find((r) => r.id === id);
+
+      const applyLocally = async (regular) => {
+        set((s) => ({
+          recipes: s.recipes.map((r) => (r.id === id ? { ...r, is_regular: regular } : r)),
+        }));
+        const updated = get().recipes.find((r) => r.id === id);
+        if (updated) await db.saveRecipe(updated);
+      };
+
+      return mutate({
+        optimistic: () => applyLocally(isRegular),
+        remote: async (changeId) => {
+          const updated = await recipesApi.setRegular(id, Boolean(value), changeId);
+          set((s) => ({ recipes: s.recipes.map((r) => (r.id === id ? updated : r)) }));
+          await db.saveRecipe(updated);
+        },
+        queue: () => ({ action: 'recipes.setRegular', data: { id, isRegular: Boolean(value) } }),
+        revert: async () => {
+          if (!previous) return;
+          set((s) => ({ recipes: s.recipes.map((r) => (r.id === id ? previous : r)) }));
+          await db.saveRecipe(previous);
+        },
+      });
+    },
+
+    // --- Meal plan ---------------------------------------------------------
+
+    /**
+     * Suggestions need the server's plan history, so this is online-only.
+     * Offline we surface a friendly message rather than guessing locally.
+     */
+    fetchMealPlanSuggestions: async (count = 4) => {
+      set((s) => ({ mealPlan: { ...s.mealPlan, loading: true, error: null } }));
+      try {
+        const { suggestions, pool } = await mealPlanApi.getSuggestions(count);
+        set({ mealPlan: { suggestions, pool, loading: false, error: null } });
+        return { suggestions, pool };
+      } catch (error) {
+        const message = isOfflineError(error)
+          ? 'Dinner suggestions need a connection. Try again once you are back online.'
+          : error.message;
+        set((s) => ({ mealPlan: { ...s.mealPlan, loading: false, error: message } }));
+        throw error;
+      }
+    },
+
+    confirmMealPlan: (recipeIds, excludedIngredientIds = []) =>
+      mutate({
+        remote: async (changeId) => {
+          const result = await mealPlanApi.confirm(recipeIds, excludedIngredientIds, changeId);
+          set((s) => ({
+            items: sortItems([...s.items, ...result.items]),
+            recipes: s.recipes.map(
+              (r) => result.recipes.find((planned) => planned.id === r.id) ?? r
+            ),
+          }));
+          await Promise.all(result.items.map((item) => db.saveItem(item)));
+          await db.saveRecipes(get().recipes);
+          return result;
+        },
+        offline: async () => ({ items: [], itemsAdded: 0, queued: true }),
+        queue: () => ({
+          action: 'mealplan.confirm',
+          data: { recipeIds, excludedIngredientIds },
+        }),
       }),
 
     removeRecipeFromList: (id) => {

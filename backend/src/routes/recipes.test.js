@@ -115,6 +115,52 @@ describe('GET /api/recipes', () => {
   });
 });
 
+describe('regular dinners', () => {
+  it('persists is_regular via PUT and leaves it alone when omitted', async () => {
+    const { body: created } = await createRecipe(pancakes);
+    expect(created.is_regular).toBe(0);
+
+    const marked = await request(app)
+      .put(`/api/recipes/${created.id}`)
+      .send({ name: 'Pancakes', ingredients: [], is_regular: true });
+    expect(marked.body.is_regular).toBe(1);
+
+    const renamed = await request(app)
+      .put(`/api/recipes/${created.id}`)
+      .send({ name: 'Crepes', ingredients: [] });
+    expect(renamed.body.is_regular).toBe(1);
+  });
+
+  it('toggles is_regular via PATCH and emits recipe-updated', async () => {
+    const { body: created } = await createRecipe(pancakes);
+
+    const { result: res, events } = await captureEvents(() =>
+      request(app).patch(`/api/recipes/${created.id}/regular`).send({ is_regular: true })
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.is_regular).toBe(1);
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'recipe-updated', data: expect.objectContaining({ is_regular: 1 }) })
+    );
+
+    const off = await request(app)
+      .patch(`/api/recipes/${created.id}/regular`)
+      .send({ is_regular: false });
+    expect(off.body.is_regular).toBe(0);
+  });
+
+  it('rejects a non-boolean value and an unknown recipe', async () => {
+    const { body: created } = await createRecipe(pancakes);
+
+    const bad = await request(app).patch(`/api/recipes/${created.id}/regular`).send({});
+    expect(bad.status).toBe(400);
+
+    const missing = await request(app).patch('/api/recipes/999/regular').send({ is_regular: true });
+    expect(missing.status).toBe(404);
+  });
+});
+
 describe('PUT /api/recipes/:id', () => {
   it('renames a recipe and replaces its ingredients wholesale', async () => {
     const { body: created } = await createRecipe(pancakes);

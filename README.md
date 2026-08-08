@@ -7,6 +7,7 @@ A full-stack Progressive Web App for managing shared grocery lists with offline 
 - **Shared Grocery Lists**: Manage items across devices with real-time sync
 - **Smart Categorization**: Learns from your usage to auto-categorize items
 - **Recipe Management**: Store recipes and add ingredients to your list in one tap
+- **"What's for dinner?" Wizard**: Weekly dinner plan drawn from your regular recipes, favouring ones you have not cooked recently
 - **Offline First**: Works without internet connection using IndexedDB
 - **PWA**: Install on mobile and desktop devices
 - **Drag & Drop**: Reorder categories and items
@@ -140,7 +141,13 @@ Groceries/
 - `POST /api/recipes` - Create recipe with ingredients
 - `PUT /api/recipes/:id` - Update recipe and ingredients
 - `DELETE /api/recipes/:id` - Delete recipe
+- `PATCH /api/recipes/:id/regular` - Mark/unmark a recipe as a weekly regular
 - `POST /api/recipes/:id/add-to-list` - Add all recipe ingredients to grocery list
+- `DELETE /api/recipes/:id/remove-from-list` - Remove a recipe's items from the list
+
+### Meal plan
+- `GET /api/mealplan/suggestions?count=4` - Suggested dinners plus the full pool of regulars
+- `POST /api/mealplan/confirm` - Add the chosen dinners' ingredients to the list and record the plan
 
 ## Environment Variables
 
@@ -181,8 +188,9 @@ The system learns from your behavior to automatically categorize items:
 The backend uses SQLite with the following tables:
 - **categories** - Grocery categories with custom ordering
 - **items** - Grocery list items with metadata
-- **recipes** - Recipe names
+- **recipes** - Recipe names, regular-dinner flag and plan recency
 - **recipe_ingredients** - Ingredients for each recipe
+- **recipe_plan_history** - Log of dinners picked in the wizard
 - **item_category_mappings** - Learning table for auto-categorization
 
 The database is automatically initialized on first run with foreign key constraints enabled. All queries use prepared statements for SQL injection prevention.

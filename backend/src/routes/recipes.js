@@ -1,7 +1,8 @@
 import express from 'express';
 import { getDatabase } from '../db/database.js';
-import { SELECT_RECIPE_INGREDIENTS, selectItemsByIds } from '../db/queries.js';
-import { getSuggestedCategory, learnCategoryMapping } from '../services/categorization.js';
+import { SELECT_RECIPE_INGREDIENTS } from '../db/queries.js';
+import { getSuggestedCategory } from '../services/categorization.js';
+import { insertRecipeItems, loadItems } from '../services/mealplan.js';
 import eventEmitter from '../services/events.js';
 import { badRequest, handler, notFound } from '../utils/http.js';
 
@@ -77,7 +78,7 @@ router.get('/:id', handler('fetching recipe', (req, res) => {
  * Body: { name, ingredients: [{ name, description, amount, category_id, position }] }
  */
 router.post('/', handler('creating recipe', (req, res) => {
-  const { name, ingredients = [], changeId } = req.body;
+  const { name, ingredients = [], is_regular = false, changeId } = req.body;
 
   if (!name || name.trim().length === 0) {
     throw badRequest('Recipe name is required');
@@ -85,7 +86,9 @@ router.post('/', handler('creating recipe', (req, res) => {
 
   const db = getDatabase();
   const recipeId = db.transaction(() => {
-    const { lastInsertRowid } = db.prepare('INSERT INTO recipes (name) VALUES (?)').run(name.trim());
+    const { lastInsertRowid } = db
+      .prepare('INSERT INTO recipes (name, is_regular) VALUES (?, ?)')
+      .run(name.trim(), is_regular ? 1 : 0);
     replaceIngredients(db, lastInsertRowid, ingredients);
     return lastInsertRowid;
   })();
@@ -101,7 +104,7 @@ router.post('/', handler('creating recipe', (req, res) => {
  */
 router.put('/:id', handler('updating recipe', (req, res) => {
   const { id } = req.params;
-  const { name, ingredients = [], changeId } = req.body;
+  const { name, ingredients = [], is_regular, changeId } = req.body;
 
   if (!name || name.trim().length === 0) {
     throw badRequest('Recipe name is required');
@@ -109,7 +112,12 @@ router.put('/:id', handler('updating recipe', (req, res) => {
 
   const db = getDatabase();
   db.transaction(() => {
-    const result = db.prepare('UPDATE recipes SET name = ? WHERE id = ?').run(name.trim(), id);
+    // `is_regular` is optional: only overwrite it when the client sent it.
+    const result = is_regular === undefined
+      ? db.prepare('UPDATE recipes SET name = ? WHERE id = ?').run(name.trim(), id)
+      : db
+        .prepare('UPDATE recipes SET name = ?, is_regular = ? WHERE id = ?')
+        .run(name.trim(), is_regular ? 1 : 0, id);
     if (result.changes === 0) {
       throw notFound('Recipe not found');
     }
@@ -119,6 +127,31 @@ router.put('/:id', handler('updating recipe', (req, res) => {
   const updatedRecipe = getRecipeWithIngredients(db, id);
   eventEmitter.emitChange('recipe-updated', updatedRecipe, changeId);
   res.json(updatedRecipe);
+}));
+
+/**
+ * PATCH /api/recipes/:id/regular
+ * Body: { is_regular } - lightweight toggle for the dinner wizard pool
+ */
+router.patch('/:id/regular', handler('updating recipe', (req, res) => {
+  const { id } = req.params;
+  const { is_regular, changeId } = req.body ?? {};
+
+  if (typeof is_regular !== 'boolean' && is_regular !== 0 && is_regular !== 1) {
+    throw badRequest('is_regular must be a boolean');
+  }
+
+  const db = getDatabase();
+  const result = db
+    .prepare('UPDATE recipes SET is_regular = ? WHERE id = ?')
+    .run(is_regular ? 1 : 0, id);
+  if (result.changes === 0) {
+    throw notFound('Recipe not found');
+  }
+
+  const updated = getRecipeWithIngredients(db, id);
+  eventEmitter.emitChange('recipe-updated', updated, changeId);
+  res.json(updated);
 }));
 
 /**
@@ -152,34 +185,9 @@ router.post('/:id/add-to-list', handler('adding recipe to list', (req, res) => {
     throw notFound('Recipe not found or has no ingredients');
   }
 
-  const recipe = db.prepare('SELECT name FROM recipes WHERE id = ?').get(id);
-  const { max } = db.prepare('SELECT MAX(position_in_list) as max FROM items').get();
+  const addedItemIds = db.transaction(() => insertRecipeItems(db, id, { ingredients }))();
 
-  const addedItemIds = db.transaction(() => {
-    const insertItem = db.prepare(`
-      INSERT INTO items (name, description, amount, category_id, position_in_list, checked, recipe_id, recipe_name)
-      VALUES (?, ?, ?, ?, ?, 0, ?, ?)
-    `);
-
-    let nextPosition = (max || 0) + 1;
-    return ingredients.map((ing) => {
-      const result = insertItem.run(
-        ing.name,
-        ing.description || null,
-        ing.amount || null,
-        ing.category_id || null,
-        nextPosition++,
-        parseInt(id, 10),
-        recipe?.name || null
-      );
-      if (ing.category_id) {
-        learnCategoryMapping(ing.name, ing.category_id);
-      }
-      return result.lastInsertRowid;
-    });
-  })();
-
-  const addedItems = db.prepare(selectItemsByIds(addedItemIds.length)).all(...addedItemIds);
+  const addedItems = loadItems(db, addedItemIds);
   addedItems.forEach((item) => eventEmitter.emitChange('item-created', item, changeId));
 
   res.status(201).json({
