@@ -348,3 +348,28 @@ describe('DELETE /api/items/:id', () => {
     expect(typeof events[0].data.id).toBe('number');
   });
 });
+
+describe('duplicate grouping', () => {
+  it('places a case- and plural-insensitive duplicate right after the original', async () => {
+    await createItem({ name: 'Tomato', category_id: 1 });
+    await createItem({ name: 'Bread', category_id: 1 });
+    await createItem({ name: 'tomatoes', category_id: 1 });
+
+    const res = await request(app).get('/api/items');
+    expect(res.body.map((i) => i.name)).toEqual(['Tomato', 'tomatoes', 'Bread']);
+  });
+
+  it('adopts the category of the existing duplicate when none is given', async () => {
+    await createItem({ name: 'Berry', category_id: 3 });
+    const res = await createItem({ name: 'berries' });
+
+    expect(res.body.category_id).toBe(3);
+  });
+
+  it('ignores checked duplicates', async () => {
+    insertItem({ name: 'Milk', category_id: 1, checked: 1, position_in_list: 1 });
+    const res = await createItem({ name: 'milk', category_id: 1 });
+
+    expect(res.body.position_in_list).toBe(2);
+  });
+});

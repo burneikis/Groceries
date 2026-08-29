@@ -1,5 +1,6 @@
 import { selectItemsByIds } from '../db/queries.js';
 import { learnCategoryMapping } from './categorization.js';
+import { placeItem } from './itemPlacement.js';
 
 /** Default number of dinners suggested per week. */
 export const DEFAULT_COUNT = 4;
@@ -101,12 +102,18 @@ export function insertRecipeItems(db, recipeId, { startPosition, ingredients } =
   let nextPosition = startPosition ?? nextItemPosition(db);
 
   return rows.map((ing) => {
+    const { position, categoryId } = placeItem(db, ing.name, ing.category_id || null, {
+      fallbackPosition: nextPosition,
+      preferGivenCategory: Boolean(ing.category_id)
+    });
+    if (position === nextPosition) nextPosition++;
+
     const result = insertItem.run(
       ing.name,
       ing.description || null,
       ing.amount || null,
-      ing.category_id || null,
-      nextPosition++,
+      categoryId,
+      position,
       parseInt(recipeId, 10),
       recipe?.name || null
     );

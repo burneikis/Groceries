@@ -3,6 +3,7 @@ import { getDatabase } from '../db/database.js';
 import { SELECT_ALL_ITEMS, SELECT_ITEM_BY_ID } from '../db/queries.js';
 import { getSuggestedCategory, learnCategoryMapping } from '../services/categorization.js';
 import eventEmitter from '../services/events.js';
+import { placeItem } from '../services/itemPlacement.js';
 import { badRequest, handler, notFound } from '../utils/http.js';
 
 const router = express.Router();
@@ -45,9 +46,11 @@ router.post('/', handler('creating item', (req, res) => {
   }
 
   const db = getDatabase();
-  const categoryId = category_id || getSuggestedCategory(name) || null;
+  const suggestedCategoryId = category_id || getSuggestedCategory(name) || null;
 
-  const { max } = db.prepare('SELECT MAX(position_in_list) as max FROM items').get();
+  const { position, categoryId } = placeItem(db, name, suggestedCategoryId, {
+    preferGivenCategory: Boolean(category_id)
+  });
 
   const result = db.prepare(`
     INSERT INTO items (name, description, amount, category_id, position_in_list, checked)
@@ -57,7 +60,7 @@ router.post('/', handler('creating item', (req, res) => {
     description?.trim() || null,
     amount?.trim() || null,
     categoryId,
-    (max || 0) + 1
+    position
   );
 
   if (categoryId) {
