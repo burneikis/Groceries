@@ -1,12 +1,49 @@
 import express from 'express';
 import { getDatabase } from '../db/database.js';
-import { SELECT_ALL_ITEMS, SELECT_ITEM_BY_ID } from '../db/queries.js';
+import { SELECT_ALL_ITEMS, SELECT_ITEM_BY_ID, SELECT_RECIPE_INGREDIENTS } from '../db/queries.js';
 import { getSuggestedCategory, learnCategoryMapping } from '../services/categorization.js';
 import eventEmitter from '../services/events.js';
 import { placeItem } from '../services/itemPlacement.js';
 import { badRequest, handler, notFound } from '../utils/http.js';
 
 const router = express.Router();
+
+/**
+ * Keep a recipe's ingredient in sync when its list item is edited.
+ * Items added from a recipe carry `recipe_id`; the ingredient is matched by
+ * its (case-insensitive) name as it was before the edit.
+ * @param {import('better-sqlite3').Database} db
+ * @param {object} previousItem - the item row before the update
+ * @param {object} update - { name, description, amount, category_id }
+ * @returns {number|null} the recipe id whose ingredients changed, if any
+ */
+function syncRecipeIngredient(db, previousItem, update) {
+  if (!previousItem?.recipe_id) return null;
+
+  const result = db.prepare(`
+    UPDATE recipe_ingredients
+    SET name = ?, description = ?, amount = ?, category_id = ?
+    WHERE recipe_id = ? AND LOWER(name) = LOWER(?)
+  `).run(
+    update.name,
+    update.description,
+    update.amount,
+    update.category_id,
+    previousItem.recipe_id,
+    previousItem.name
+  );
+
+  return result.changes > 0 ? previousItem.recipe_id : null;
+}
+
+/**
+ * @returns {object|null} a recipe with its ingredients, for change events
+ */
+function recipeWithIngredients(db, recipeId) {
+  const recipe = db.prepare('SELECT * FROM recipes WHERE id = ?').get(recipeId);
+  if (!recipe) return null;
+  return { ...recipe, ingredients: db.prepare(SELECT_RECIPE_INGREDIENTS).all(recipeId) };
+}
 
 /** @returns {object[]} every item in canonical list order */
 const allItems = (db) => db.prepare(SELECT_ALL_ITEMS).all();
@@ -144,21 +181,27 @@ router.put('/:id', handler('updating item', (req, res) => {
   }
 
   const db = getDatabase();
-  const result = db.prepare(`
-    UPDATE items
-    SET name = ?, description = ?, amount = ?, category_id = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(
-    name.trim(),
-    description?.trim() || null,
-    amount?.trim() || null,
-    category_id || null,
-    id
-  );
-
-  if (result.changes === 0) {
+  const previousItem = itemById(db, id);
+  if (!previousItem) {
     throw notFound('Item not found');
   }
+
+  const update = {
+    name: name.trim(),
+    description: description?.trim() || null,
+    amount: amount?.trim() || null,
+    category_id: category_id || null,
+  };
+
+  const syncedRecipeId = db.transaction(() => {
+    db.prepare(`
+      UPDATE items
+      SET name = ?, description = ?, amount = ?, category_id = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(update.name, update.description, update.amount, update.category_id, id);
+
+    return syncRecipeIngredient(db, previousItem, update);
+  })();
 
   if (category_id) {
     learnCategoryMapping(name, category_id);
@@ -166,6 +209,14 @@ router.put('/:id', handler('updating item', (req, res) => {
 
   const updatedItem = itemById(db, id);
   eventEmitter.emitChange('item-updated', updatedItem, changeId);
+
+  if (syncedRecipeId) {
+    const recipe = recipeWithIngredients(db, syncedRecipeId);
+    if (recipe) {
+      eventEmitter.emitChange('recipe-updated', recipe, changeId);
+    }
+  }
+
   res.json(updatedItem);
 }));
 

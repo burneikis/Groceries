@@ -178,6 +178,52 @@ describe('PUT /api/items/:id', () => {
 
     expect(events[0]).toMatchObject({ type: 'item-updated', changeId: 'c2' });
   });
+
+  describe('when the item came from a recipe', () => {
+    const createRecipeWithItem = async () => {
+      const { body: recipe } = await request(app)
+        .post('/api/recipes')
+        .send({ name: 'Pancakes', ingredients: [{ name: 'Milk', category_id: 8 }] });
+      const { body: added } = await request(app).post(`/api/recipes/${recipe.id}/add-to-list`).send({});
+      return { recipe, item: added.items[0] };
+    };
+
+    it('mirrors the edit onto the recipe ingredient', async () => {
+      const { recipe, item } = await createRecipeWithItem();
+
+      await request(app)
+        .put(`/api/items/${item.id}`)
+        .send({ name: 'Oat milk', amount: '1L', category_id: 3 });
+
+      const { body: updatedRecipe } = await request(app).get(`/api/recipes/${recipe.id}`);
+      expect(updatedRecipe.ingredients[0]).toMatchObject({
+        name: 'Oat milk',
+        amount: '1L',
+        category_id: 3,
+      });
+    });
+
+    it('broadcasts recipe-updated alongside item-updated', async () => {
+      const { item } = await createRecipeWithItem();
+      const { events } = await captureEvents(() =>
+        request(app).put(`/api/items/${item.id}`).send({ name: 'Milk', category_id: 3 })
+      );
+
+      expect(events.map((e) => e.type)).toEqual(['item-updated', 'recipe-updated']);
+    });
+
+    it('leaves ingredients of other recipes alone', async () => {
+      const { item } = await createRecipeWithItem();
+      const { body: other } = await request(app)
+        .post('/api/recipes')
+        .send({ name: 'Cereal', ingredients: [{ name: 'Milk', category_id: 8 }] });
+
+      await request(app).put(`/api/items/${item.id}`).send({ name: 'Milk', category_id: 3 });
+
+      const { body: otherRecipe } = await request(app).get(`/api/recipes/${other.id}`);
+      expect(otherRecipe.ingredients[0].category_id).toBe(8);
+    });
+  });
 });
 
 describe('PATCH /api/items/:id/check', () => {
