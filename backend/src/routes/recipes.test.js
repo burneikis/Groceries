@@ -201,6 +201,51 @@ describe('PUT /api/recipes/:id', () => {
     const after = await request(app).get(`/api/recipes/${created.id}`);
     expect(after.body.ingredients.map((i) => i.name)).toEqual(['Flour', 'Eggs']);
   });
+
+  describe('when the recipe is already on the list', () => {
+    const addToList = async () => {
+      const { body: created } = await createRecipe(pancakes);
+      const { body: added } = await request(app).post(`/api/recipes/${created.id}/add-to-list`).send({});
+      return { recipe: created, items: added.items };
+    };
+
+    it('pushes ingredient edits onto the matching list items', async () => {
+      const { recipe } = await addToList();
+
+      await request(app).put(`/api/recipes/${recipe.id}`).send({
+        name: 'Pancakes',
+        ingredients: [{ name: 'Flour', amount: '500g', category_id: 3 }, { name: 'Eggs' }],
+      });
+
+      const { body: items } = await request(app).get('/api/items');
+      expect(items.find((i) => i.name === 'Flour')).toMatchObject({ amount: '500g', category_id: 3 });
+    });
+
+    it('leaves items whose ingredient was renamed or removed alone', async () => {
+      const { recipe } = await addToList();
+
+      await request(app)
+        .put(`/api/recipes/${recipe.id}`)
+        .send({ name: 'Pancakes', ingredients: [{ name: 'Butter' }] });
+
+      const { body: items } = await request(app).get('/api/items');
+      expect(items.map((i) => i.name).sort()).toEqual(['Eggs', 'Flour']);
+    });
+
+    it('broadcasts item-updated for each synced item', async () => {
+      const { recipe } = await addToList();
+
+      const { events } = await captureEvents(() =>
+        request(app).put(`/api/recipes/${recipe.id}`).send({
+          name: 'Pancakes',
+          ingredients: [{ name: 'Flour', category_id: 3 }, { name: 'Eggs' }],
+          changeId: 'r1',
+        })
+      );
+
+      expect(events.map((e) => e.type)).toEqual(['recipe-updated', 'item-updated', 'item-updated']);
+    });
+  });
 });
 
 describe('DELETE /api/recipes/:id', () => {

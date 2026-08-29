@@ -56,6 +56,37 @@ function replaceIngredients(db, recipeId, ingredients) {
 }
 
 /**
+ * Push ingredient edits onto the grocery-list items that came from this recipe.
+ * Items are matched by name (case-insensitive), so a renamed ingredient leaves
+ * its list item untouched rather than guessing at the pairing.
+ * Assumes an open transaction.
+ * @param {import('better-sqlite3').Database} db
+ * @param {number|string} recipeId
+ * @param {object[]} ingredients - the ingredients as just stored
+ * @returns {number[]} ids of the items that changed
+ */
+function syncRecipeItems(db, recipeId, ingredients) {
+  const items = db.prepare('SELECT id, name FROM items WHERE recipe_id = ?').all(recipeId);
+  if (items.length === 0) return [];
+
+  const byName = new Map(ingredients.map((ing) => [ing.name.toLowerCase(), ing]));
+  const update = db.prepare(`
+    UPDATE items
+    SET description = ?, amount = ?, category_id = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `);
+
+  const changedIds = [];
+  for (const item of items) {
+    const ing = byName.get(item.name.toLowerCase());
+    if (!ing) continue;
+    update.run(ing.description, ing.amount, ing.category_id, item.id);
+    changedIds.push(item.id);
+  }
+  return changedIds;
+}
+
+/**
  * GET /api/recipes
  * Get all recipes (without ingredients)
  */
@@ -111,7 +142,7 @@ router.put('/:id', handler('updating recipe', (req, res) => {
   }
 
   const db = getDatabase();
-  db.transaction(() => {
+  const syncedItemIds = db.transaction(() => {
     // `is_regular` is optional: only overwrite it when the client sent it.
     const result = is_regular === undefined
       ? db.prepare('UPDATE recipes SET name = ? WHERE id = ?').run(name.trim(), id)
@@ -122,10 +153,12 @@ router.put('/:id', handler('updating recipe', (req, res) => {
       throw notFound('Recipe not found');
     }
     replaceIngredients(db, id, ingredients);
+    return syncRecipeItems(db, id, db.prepare('SELECT * FROM recipe_ingredients WHERE recipe_id = ?').all(id));
   })();
 
   const updatedRecipe = getRecipeWithIngredients(db, id);
   eventEmitter.emitChange('recipe-updated', updatedRecipe, changeId);
+  loadItems(db, syncedItemIds).forEach((item) => eventEmitter.emitChange('item-updated', item, changeId));
   res.json(updatedRecipe);
 }));
 
