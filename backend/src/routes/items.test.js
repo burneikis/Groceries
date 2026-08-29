@@ -212,16 +212,44 @@ describe('PUT /api/items/:id', () => {
       expect(events.map((e) => e.type)).toEqual(['item-updated', 'recipe-updated']);
     });
 
-    it('leaves ingredients of other recipes alone', async () => {
+    it('recategorises the same ingredient in every other recipe', async () => {
       const { item } = await createRecipeWithItem();
       const { body: other } = await request(app)
         .post('/api/recipes')
-        .send({ name: 'Cereal', ingredients: [{ name: 'Milk', category_id: 8 }] });
+        .send({ name: 'Cereal', ingredients: [{ name: 'milk', category_id: 8 }, { name: 'Oats', category_id: 8 }] });
 
       await request(app).put(`/api/items/${item.id}`).send({ name: 'Milk', category_id: 3 });
 
       const { body: otherRecipe } = await request(app).get(`/api/recipes/${other.id}`);
-      expect(otherRecipe.ingredients[0].category_id).toBe(8);
+      expect(otherRecipe.ingredients).toMatchObject([
+        { name: 'milk', category_id: 3 },
+        { name: 'Oats', category_id: 8 },
+      ]);
+    });
+
+    it('leaves amounts in other recipes alone', async () => {
+      const { item } = await createRecipeWithItem();
+      const { body: other } = await request(app)
+        .post('/api/recipes')
+        .send({ name: 'Cereal', ingredients: [{ name: 'Milk', amount: '100ml', category_id: 8 }] });
+
+      await request(app).put(`/api/items/${item.id}`).send({ name: 'Milk', amount: '2L', category_id: 3 });
+
+      const { body: otherRecipe } = await request(app).get(`/api/recipes/${other.id}`);
+      expect(otherRecipe.ingredients[0]).toMatchObject({ amount: '100ml', category_id: 3 });
+    });
+
+    it('recategorises duplicate list items with the same name', async () => {
+      const { item } = await createRecipeWithItem();
+      const { body: duplicate } = await createItem({ name: 'milk', amount: '500ml', category_id: 8 });
+
+      await request(app).put(`/api/items/${item.id}`).send({ name: 'Milk', category_id: 3 });
+
+      const { body: items } = await request(app).get('/api/items');
+      expect(items.find((i) => i.id === duplicate.id)).toMatchObject({
+        amount: '500ml',
+        category_id: 3,
+      });
     });
   });
 });

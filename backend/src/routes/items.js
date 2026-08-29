@@ -3,7 +3,9 @@ import { getDatabase } from '../db/database.js';
 import { SELECT_ALL_ITEMS, SELECT_ITEM_BY_ID, SELECT_RECIPE_INGREDIENTS } from '../db/queries.js';
 import { getSuggestedCategory, learnCategoryMapping } from '../services/categorization.js';
 import eventEmitter from '../services/events.js';
+import { propagateCategory } from '../services/categorySync.js';
 import { placeItem } from '../services/itemPlacement.js';
+import { loadItems } from '../services/mealplan.js';
 import { badRequest, handler, notFound } from '../utils/http.js';
 
 const router = express.Router();
@@ -193,14 +195,27 @@ router.put('/:id', handler('updating item', (req, res) => {
     category_id: category_id || null,
   };
 
-  const syncedRecipeId = db.transaction(() => {
+  const synced = db.transaction(() => {
     db.prepare(`
       UPDATE items
       SET name = ?, description = ?, amount = ?, category_id = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(update.name, update.description, update.amount, update.category_id, id);
 
-    return syncRecipeIngredient(db, previousItem, update);
+    // The item's own recipe mirrors the whole edit (it can follow a rename);
+    // everywhere else only the category is shared.
+    const ownRecipeId = syncRecipeIngredient(db, previousItem, update);
+    const fanOut = propagateCategory(db, {
+      name: update.name,
+      categoryId: update.category_id,
+      excludeItemId: id,
+      excludeRecipeId: ownRecipeId,
+    });
+
+    return {
+      itemIds: fanOut.itemIds,
+      recipeIds: ownRecipeId ? [ownRecipeId, ...fanOut.recipeIds] : fanOut.recipeIds,
+    };
   })();
 
   if (category_id) {
@@ -210,12 +225,12 @@ router.put('/:id', handler('updating item', (req, res) => {
   const updatedItem = itemById(db, id);
   eventEmitter.emitChange('item-updated', updatedItem, changeId);
 
-  if (syncedRecipeId) {
-    const recipe = recipeWithIngredients(db, syncedRecipeId);
-    if (recipe) {
-      eventEmitter.emitChange('recipe-updated', recipe, changeId);
-    }
-  }
+  loadItems(db, synced.itemIds)
+    .forEach((item) => eventEmitter.emitChange('item-updated', item, changeId));
+  synced.recipeIds
+    .map((recipeId) => recipeWithIngredients(db, recipeId))
+    .filter(Boolean)
+    .forEach((recipe) => eventEmitter.emitChange('recipe-updated', recipe, changeId));
 
   res.json(updatedItem);
 }));

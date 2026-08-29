@@ -246,6 +246,25 @@ describe('PUT /api/recipes/:id', () => {
       expect(events.map((e) => e.type)).toEqual(['recipe-updated', 'item-updated', 'item-updated']);
     });
   });
+
+  it('shares an ingredient category with other recipes and loose list items', async () => {
+    const { body: created } = await createRecipe(pancakes);
+    const { body: other } = await createRecipe({
+      name: 'Bread',
+      ingredients: [{ name: 'flour', amount: '1kg', category_id: 8 }],
+    });
+    const { body: loose } = await request(app).post('/api/items').send({ name: 'Flour', category_id: 8 });
+
+    await request(app)
+      .put(`/api/recipes/${created.id}`)
+      .send({ name: 'Pancakes', ingredients: [{ name: 'Flour', category_id: 3 }] });
+
+    const { body: otherRecipe } = await request(app).get(`/api/recipes/${other.id}`);
+    expect(otherRecipe.ingredients[0]).toMatchObject({ amount: '1kg', category_id: 3 });
+
+    const { body: items } = await request(app).get('/api/items');
+    expect(items.find((i) => i.id === loose.id).category_id).toBe(3);
+  });
 });
 
 describe('DELETE /api/recipes/:id', () => {
