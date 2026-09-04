@@ -329,8 +329,19 @@ describe('POST /api/recipes/:id/add-to-list', () => {
       request(app).post(`/api/recipes/${created.id}/add-to-list`).send({ changeId: 'c2' })
     );
 
-    expect(events).toHaveLength(2);
-    expect(events.every((e) => e.type === 'item-created' && e.changeId === 'c2')).toBe(true);
+    expect(events).toHaveLength(3);
+    expect(events.filter((e) => e.type === 'item-created')).toHaveLength(2);
+    expect(events.filter((e) => e.type === 'recipe-updated')).toHaveLength(1);
+    expect(events.every((e) => e.changeId === 'c2')).toBe(true);
+  });
+
+  it('stamps the recipe as cooked', async () => {
+    const { body: created } = await createRecipe(pancakes);
+
+    const res = await request(app).post(`/api/recipes/${created.id}/add-to-list`).send({});
+
+    expect(res.body.recipe.plan_count).toBe(1);
+    expect(res.body.recipe.last_planned_at).toBeTruthy();
   });
 
   it('adding twice produces two independent sets of items', async () => {

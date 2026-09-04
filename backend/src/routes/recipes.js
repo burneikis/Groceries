@@ -3,7 +3,7 @@ import { getDatabase } from '../db/database.js';
 import { SELECT_RECIPE_INGREDIENTS } from '../db/queries.js';
 import { getSuggestedCategory } from '../services/categorization.js';
 import { propagateCategory } from '../services/categorySync.js';
-import { insertRecipeItems, loadItems } from '../services/mealplan.js';
+import { insertRecipeItems, loadItems, stampPlanned } from '../services/mealplan.js';
 import eventEmitter from '../services/events.js';
 import { badRequest, handler, notFound } from '../utils/http.js';
 
@@ -228,7 +228,8 @@ router.delete('/:id', handler('deleting recipe', (req, res) => {
 
 /**
  * POST /api/recipes/:id/add-to-list
- * Add all recipe ingredients to the grocery list
+ * Add all recipe ingredients to the grocery list.
+ * Counts as cooking the recipe, same as a wizard confirm.
  */
 router.post('/:id/add-to-list', handler('adding recipe to list', (req, res) => {
   const { id } = req.params;
@@ -240,15 +241,24 @@ router.post('/:id/add-to-list', handler('adding recipe to list', (req, res) => {
     throw notFound('Recipe not found or has no ingredients');
   }
 
-  const addedItemIds = db.transaction(() => insertRecipeItems(db, id, { ingredients }))();
+  const recipeId = parseInt(id, 10);
+  const addedItemIds = db.transaction(() => {
+    const itemIds = insertRecipeItems(db, id, { ingredients });
+    stampPlanned(db, [recipeId]);
+    return itemIds;
+  })();
 
   const addedItems = loadItems(db, addedItemIds);
   addedItems.forEach((item) => eventEmitter.emitChange('item-created', item, changeId));
+
+  const recipe = db.prepare('SELECT * FROM recipes WHERE id = ?').get(recipeId);
+  eventEmitter.emitChange('recipe-updated', recipe, changeId);
 
   res.status(201).json({
     message: 'Recipe ingredients added to list',
     itemsAdded: addedItems.length,
     items: addedItems,
+    recipe,
   });
 }));
 
