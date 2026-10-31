@@ -1,7 +1,7 @@
 import { openDB } from 'idb';
 
 const DB_NAME = 'groceries';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise;
 
@@ -17,6 +17,9 @@ function getDB() {
         }
         if (!db.objectStoreNames.contains('recipes')) {
           db.createObjectStore('recipes', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('recurring')) {
+          db.createObjectStore('recurring', { keyPath: 'id' });
         }
         if (!db.objectStoreNames.contains('syncQueue')) {
           db.createObjectStore('syncQueue', { keyPath: 'id', autoIncrement: true });
@@ -106,6 +109,32 @@ export async function saveRecipe(recipe) {
 export async function deleteRecipeLocal(id) {
   const db = await getDB();
   await db.delete('recipes', id);
+}
+
+// Recurring items
+export async function getRecurringItems() {
+  const db = await getDB();
+  return db.getAll('recurring');
+}
+
+export async function saveRecurringItems(recurringItems) {
+  const db = await getDB();
+  const tx = db.transaction('recurring', 'readwrite');
+  await tx.store.clear();
+  for (const recurring of recurringItems) {
+    await tx.store.put(recurring);
+  }
+  await tx.done;
+}
+
+export async function saveRecurringItem(recurring) {
+  const db = await getDB();
+  await db.put('recurring', recurring);
+}
+
+export async function deleteRecurringItemLocal(id) {
+  const db = await getDB();
+  await db.delete('recurring', id);
 }
 
 // Sync Queue

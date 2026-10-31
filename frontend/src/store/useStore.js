@@ -1,5 +1,12 @@
 import { create } from 'zustand';
-import { NetworkError, categoriesApi, itemsApi, mealPlanApi, recipesApi } from '../services/api';
+import {
+  NetworkError,
+  categoriesApi,
+  itemsApi,
+  mealPlanApi,
+  recipesApi,
+  recurringApi,
+} from '../services/api';
 import * as db from '../services/db';
 import {
   createTempId,
@@ -61,9 +68,36 @@ const useStore = create((set, get) => {
   /** Persist the current categories array to IndexedDB. */
   const persistCategories = () => db.saveCategories(get().categories);
 
+  /** Replace one recurring item in state and IndexedDB. */
+  const putRecurring = async (recurring) => {
+    set((s) => ({
+      recurringItems: s.recurringItems.some((r) => r.id === recurring.id)
+        ? s.recurringItems.map((r) => (r.id === recurring.id ? recurring : r))
+        : [...s.recurringItems, recurring],
+    }));
+    await db.saveRecurringItem(recurring);
+  };
+
+  const removeRecurring = async (id) => {
+    set((s) => ({ recurringItems: s.recurringItems.filter((r) => r.id !== id) }));
+    await db.deleteRecurringItemLocal(id);
+  };
+
+  /** Mirror the server: deleting a category leaves its recurring items uncategorised. */
+  const detachRecurringFromCategory = async (categoryId) => {
+    const affected = get().recurringItems.filter((r) => r.category_id === categoryId);
+    if (affected.length === 0) return;
+    set((s) => ({
+      recurringItems: s.recurringItems.map((r) =>
+        r.category_id === categoryId ? { ...r, category_id: null, category_name: null } : r
+      ),
+    }));
+    await db.saveRecurringItems(get().recurringItems);
+  };
+
   /**
-   * Shared fetch-with-cache-fallback used by all three collections.
-   * @param {'categories'|'items'|'recipes'} key
+   * Shared fetch-with-cache-fallback used by every collection.
+   * @param {'categories'|'items'|'recipes'|'recurringItems'} key
    * @param {() => Promise<object[]>} fetchRemote
    * @param {(data: object[]) => Promise<void>} saveLocal
    * @param {() => Promise<object[]>} readLocal
@@ -89,7 +123,8 @@ const useStore = create((set, get) => {
     categories: [],
     items: [],
     recipes: [],
-    loading: { categories: false, items: false, recipes: false },
+    recurringItems: [],
+    loading: { categories: false, items: false, recipes: false, recurringItems: false },
     error: null,
     isOnline: navigator.onLine,
     pendingSyncs: 0,
@@ -116,8 +151,8 @@ const useStore = create((set, get) => {
       /** Pull fresh server state after a flush so temp ids are replaced. */
       const afterSync = async ({ synced }) => {
         if (synced > 0) {
-          const { fetchCategories, fetchItems, fetchRecipes } = get();
-          await Promise.all([fetchCategories(), fetchItems(), fetchRecipes()]);
+          const { fetchCategories, fetchItems, fetchRecipes, fetchRecurringItems } = get();
+          await Promise.all([fetchCategories(), fetchItems(), fetchRecipes(), fetchRecurringItems()]);
         }
         await refreshPendingSyncs();
       };
@@ -231,6 +266,7 @@ const useStore = create((set, get) => {
         'category-deleted': async () => {
           set((s) => ({ categories: s.categories.filter((c) => c.id !== data.id) }));
           await persistCategories();
+          await detachRecurringFromCategory(data.id);
         },
         'categories-reordered': async () => {
           set({ categories: data });
@@ -249,6 +285,9 @@ const useStore = create((set, get) => {
           set((s) => ({ recipes: s.recipes.filter((r) => r.id !== data.id) }));
           await db.deleteRecipeLocal(data.id);
         },
+        'recurring-created': () => putRecurring(data),
+        'recurring-updated': () => putRecurring(data),
+        'recurring-deleted': () => removeRecurring(data.id),
       };
 
       const handler = handlers[type];
@@ -320,6 +359,7 @@ const useStore = create((set, get) => {
       const removeLocally = async () => {
         set((s) => ({ categories: s.categories.filter((c) => c.id !== id) }));
         await persistCategories();
+        await detachRecurringFromCategory(id);
       };
       return mutate({
         remote: async (changeId) => {
@@ -579,6 +619,56 @@ const useStore = create((set, get) => {
       });
     },
 
+    // --- Recurring items ---------------------------------------------------
+
+    fetchRecurringItems: () =>
+      fetchCollection(
+        'recurringItems',
+        recurringApi.getAll,
+        db.saveRecurringItems,
+        db.getRecurringItems
+      ),
+
+    createRecurringItem: (recurring) => {
+      const tempId = createTempId();
+      return mutate({
+        remote: async (changeId) => {
+          const created = await recurringApi.create(recurring, changeId);
+          await putRecurring(created);
+          return created;
+        },
+        offline: async () => {
+          const temp = { id: tempId, ...recurring, created_at: new Date().toISOString() };
+          await putRecurring(temp);
+          return temp;
+        },
+        queue: () => ({ action: 'recurring.create', data: { recurring }, tempId }),
+      });
+    },
+
+    updateRecurringItem: (id, recurring) =>
+      mutate({
+        remote: async (changeId) => {
+          const updated = await recurringApi.update(id, recurring, changeId);
+          await putRecurring(updated);
+        },
+        offline: async () => {
+          const existing = get().recurringItems.find((r) => r.id === id);
+          await putRecurring({ ...existing, ...recurring });
+        },
+        queue: () => ({ action: 'recurring.update', data: { id, recurring } }),
+      }),
+
+    deleteRecurringItem: (id) =>
+      mutate({
+        remote: async (changeId) => {
+          await recurringApi.delete(id, changeId);
+          await removeRecurring(id);
+        },
+        offline: () => removeRecurring(id),
+        queue: () => ({ action: 'recurring.delete', data: { id } }),
+      }),
+
     // --- Meal plan ---------------------------------------------------------
 
     /**
@@ -600,10 +690,15 @@ const useStore = create((set, get) => {
       }
     },
 
-    confirmMealPlan: (recipeIds, excludedIngredientIds = []) =>
+    confirmMealPlan: (recipeIds, excludedIngredientIds = [], recurringItemIds = []) =>
       mutate({
         remote: async (changeId) => {
-          const result = await mealPlanApi.confirm(recipeIds, excludedIngredientIds, changeId);
+          const result = await mealPlanApi.confirm(
+            recipeIds,
+            excludedIngredientIds,
+            recurringItemIds,
+            changeId
+          );
           set((s) => ({
             items: sortItems([...s.items, ...result.items]),
             recipes: s.recipes.map(
@@ -617,7 +712,7 @@ const useStore = create((set, get) => {
         offline: async () => ({ items: [], itemsAdded: 0, queued: true }),
         queue: () => ({
           action: 'mealplan.confirm',
-          data: { recipeIds, excludedIngredientIds },
+          data: { recipeIds, excludedIngredientIds, recurringItemIds },
         }),
       }),
 

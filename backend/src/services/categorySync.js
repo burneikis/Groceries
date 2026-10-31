@@ -3,7 +3,8 @@
  *
  * A grocery name has exactly one sensible category, so when the user
  * recategorises "Milk" anywhere we apply that choice to every other copy of
- * "Milk": duplicate list items and every recipe that uses it. Names are
+ * "Milk": duplicate list items, every recipe that uses it and the recurring
+ * item of that name. Names are
  * matched case-insensitively; amounts, descriptions and check state are never
  * touched, because those legitimately differ between copies.
  *
@@ -71,18 +72,46 @@ export function propagateCategoryToRecipes(db, name, categoryId, excludeRecipeId
 }
 
 /**
- * Fan a category choice out to both the list and the recipe book.
+ * Apply a category to every same-named recurring item.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} name
+ * @param {number|null} categoryId
+ * @param {number|string|null} [excludeRecurringId] - recurring item already updated
+ * @returns {number[]} ids of the recurring items that changed
+ */
+export function propagateCategoryToRecurring(db, name, categoryId, excludeRecurringId = null) {
+  const affected = db.prepare(`
+    SELECT id FROM recurring_items
+    WHERE LOWER(name) = LOWER(?)
+      AND id IS NOT ?
+      AND category_id IS NOT ?
+  `).all(name, asId(excludeRecurringId), categoryId).map((row) => row.id);
+
+  if (affected.length === 0) return [];
+
+  const update = db.prepare('UPDATE recurring_items SET category_id = ? WHERE id = ?');
+  affected.forEach((id) => update.run(categoryId, id));
+  return affected;
+}
+
+/**
+ * Fan a category choice out to the list, the recipe book and recurring items.
  * @param {import('better-sqlite3').Database} db
  * @param {object} params
  * @param {string} params.name
  * @param {number|null} params.categoryId
  * @param {number|string|null} [params.excludeItemId]
  * @param {number|string|null} [params.excludeRecipeId]
- * @returns {{itemIds: number[], recipeIds: number[]}}
+ * @param {number|string|null} [params.excludeRecurringId]
+ * @returns {{itemIds: number[], recipeIds: number[], recurringIds: number[]}}
  */
-export function propagateCategory(db, { name, categoryId, excludeItemId = null, excludeRecipeId = null }) {
+export function propagateCategory(
+  db,
+  { name, categoryId, excludeItemId = null, excludeRecipeId = null, excludeRecurringId = null }
+) {
   return {
     itemIds: propagateCategoryToItems(db, name, categoryId, excludeItemId),
     recipeIds: propagateCategoryToRecipes(db, name, categoryId, excludeRecipeId),
+    recurringIds: propagateCategoryToRecurring(db, name, categoryId, excludeRecurringId),
   };
 }

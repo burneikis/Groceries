@@ -6,6 +6,7 @@ import {
   DEFAULT_COUNT,
   getCandidateRecipes,
   insertRecipeItems,
+  insertRecurringItems,
   loadItems,
   nextItemPosition,
   pickSuggestions,
@@ -44,11 +45,13 @@ router.get('/suggestions', handler('fetching meal plan suggestions', (req, res) 
 
 /**
  * POST /api/mealplan/confirm
- * Body: { recipeIds: [...], excludedIngredientIds?: [...], changeId }
- * Adds every recipe's ingredients to the list and stamps the plan history.
+ * Body: { recipeIds: [...], excludedIngredientIds?: [...], recurringItemIds?: [...], changeId }
+ * Adds every recipe's ingredients plus the chosen recurring items to the list
+ * and stamps the plan history. Recurring ids that no longer exist (deleted
+ * while this request sat in an offline queue) are skipped.
  */
 router.post('/confirm', handler('confirming meal plan', (req, res) => {
-  const { recipeIds, excludedIngredientIds = [], changeId } = req.body ?? {};
+  const { recipeIds, excludedIngredientIds = [], recurringItemIds = [], changeId } = req.body ?? {};
 
   if (!Array.isArray(recipeIds) || recipeIds.length === 0) {
     throw badRequest('recipeIds must be a non-empty array');
@@ -58,6 +61,14 @@ router.post('/confirm', handler('confirming meal plan', (req, res) => {
   const ids = recipeIds.map((id) => parseInt(id, 10));
   if (ids.some((id) => Number.isNaN(id))) {
     throw badRequest('recipeIds must be numeric');
+  }
+
+  if (!Array.isArray(recurringItemIds)) {
+    throw badRequest('recurringItemIds must be an array');
+  }
+  const recurringIds = recurringItemIds.map((id) => parseInt(id, 10));
+  if (recurringIds.some((id) => Number.isNaN(id))) {
+    throw badRequest('recurringItemIds must be numeric');
   }
 
   const excluded = new Set(excludedIngredientIds.map((id) => parseInt(id, 10)));
@@ -79,6 +90,10 @@ router.post('/confirm', handler('confirming meal plan', (req, res) => {
       position += itemIds.length;
       inserted.push(...itemIds);
     }
+
+    const selectRecurring = db.prepare('SELECT * FROM recurring_items WHERE id = ?');
+    const recurring = recurringIds.map((id) => selectRecurring.get(id)).filter(Boolean);
+    inserted.push(...insertRecurringItems(db, recurring, { startPosition: position }));
 
     stampPlanned(db, ids);
     return inserted;

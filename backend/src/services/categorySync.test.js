@@ -5,6 +5,7 @@ import {
   propagateCategory,
   propagateCategoryToItems,
   propagateCategoryToRecipes,
+  propagateCategoryToRecurring,
 } from './categorySync.js';
 
 beforeEach(() => {
@@ -35,6 +36,15 @@ const addRecipe = (name, ingredients) => {
   ingredients.forEach((ing) => insert.run(recipeId, ing.name, ing.category_id, ing.amount ?? null));
   return recipeId;
 };
+
+const addRecurring = (name, categoryId) =>
+  Number(
+    getDatabase()
+      .prepare('INSERT INTO recurring_items (name, category_id) VALUES (?, ?)')
+      .run(name, categoryId).lastInsertRowid
+  );
+
+const recurringRow = (id) => getDatabase().prepare('SELECT * FROM recurring_items WHERE id = ?').get(id);
 
 const itemRow = (id) => getDatabase().prepare('SELECT * FROM items WHERE id = ?').get(id);
 const ingredientRows = (recipeId) =>
@@ -103,14 +113,32 @@ describe('propagateCategoryToRecipes', () => {
   });
 });
 
+describe('propagateCategoryToRecurring', () => {
+  it('recategorises the same-named recurring item, ignoring case', () => {
+    const milk = addRecurring('milk', 8);
+    addRecurring('Bread', 8);
+
+    expect(propagateCategoryToRecurring(getDatabase(), 'Milk', 3)).toEqual([milk]);
+    expect(recurringRow(milk).category_id).toBe(3);
+  });
+
+  it('skips the excluded recurring item', () => {
+    const milk = addRecurring('Milk', 8);
+    expect(propagateCategoryToRecurring(getDatabase(), 'Milk', 3, milk)).toEqual([]);
+    expect(recurringRow(milk).category_id).toBe(8);
+  });
+});
+
 describe('propagateCategory', () => {
-  it('fans out to items and recipes at once', () => {
+  it('fans out to items, recipes and recurring items at once', () => {
     const item = addItem('Milk', 8);
     const recipe = addRecipe('Cereal', [{ name: 'Milk', category_id: 8 }]);
+    const recurring = addRecurring('Milk', 8);
 
     expect(propagateCategory(getDatabase(), { name: 'Milk', categoryId: 3 })).toEqual({
       itemIds: [item],
       recipeIds: [recipe],
+      recurringIds: [recurring],
     });
   });
 });

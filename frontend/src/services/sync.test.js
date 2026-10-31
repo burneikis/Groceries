@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ApiError, NetworkError, categoriesApi, itemsApi, recipesApi } from './api';
+import { ApiError, NetworkError, categoriesApi, itemsApi, mealPlanApi, recipesApi, recurringApi } from './api';
 import { getSyncQueue } from './db';
 import { createTempId, processQueue, queueMutation } from './sync';
 
@@ -15,6 +15,8 @@ vi.mock('./api', async (importOriginal) => {
     categoriesApi: stub(['create', 'update', 'delete', 'reorder']),
     itemsApi: stub(['create', 'update', 'toggleCheck', 'delete', 'deleteChecked', 'reorder']),
     recipesApi: stub(['create', 'update', 'delete', 'addToList', 'removeFromList']),
+    recurringApi: stub(['create', 'update', 'delete']),
+    mealPlanApi: stub(['confirm']),
   };
 });
 
@@ -205,5 +207,33 @@ describe('processQueue', () => {
     expect(itemsApi.reorder).toHaveBeenCalled();
     expect(recipesApi.removeFromList).toHaveBeenCalledWith(3, expect.any(String));
     expect(result.synced).toBe(2);
+  });
+});
+
+describe('recurring items', () => {
+  it('remaps an offline-created recurring item into a queued meal plan', async () => {
+    const tempId = createTempId();
+    await queueMutation('recurring.create', { recurring: { name: 'Milk' } }, tempId);
+    await queueMutation('mealplan.confirm', {
+      recipeIds: [1],
+      excludedIngredientIds: [],
+      recurringItemIds: [tempId],
+    });
+    recurringApi.create.mockResolvedValue({ id: 42, name: 'Milk' });
+    mealPlanApi.confirm.mockResolvedValue({ items: [] });
+
+    const result = await processQueue();
+
+    expect(result).toMatchObject({ synced: 2, failed: 0 });
+    expect(mealPlanApi.confirm).toHaveBeenCalledWith([1], [], [42], expect.any(String));
+  });
+
+  it('replays an older queued meal plan that has no recurring ids', async () => {
+    await queueMutation('mealplan.confirm', { recipeIds: [1], excludedIngredientIds: [] });
+    mealPlanApi.confirm.mockResolvedValue({ items: [] });
+
+    await processQueue();
+
+    expect(mealPlanApi.confirm).toHaveBeenCalledWith([1], [], [], expect.any(String));
   });
 });

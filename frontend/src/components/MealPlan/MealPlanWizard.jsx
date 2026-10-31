@@ -2,15 +2,26 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import useStore from '../../store/useStore'
 import LoadingSpinner from '../LoadingSpinner'
+import { sortRecurring } from '../../utils/recurring'
 import {
   DRAFT_KEY,
   buildReviewList,
   lastCookedLabel,
   nextFromPool,
+  onListChecker,
   rejectRecipe,
+  reviewSources,
 } from './mealPlanUtils'
 
 const COUNT_OPTIONS = [3, 4, 5]
+
+/** @returns {Set} a copy of `set` with `value` added or removed */
+const toggleInSet = (set, value) => {
+  const next = new Set(set)
+  if (next.has(value)) next.delete(value)
+  else next.add(value)
+  return next
+}
 
 const readDraft = () => {
   try {
@@ -22,7 +33,16 @@ const readDraft = () => {
 
 export default function MealPlanWizard() {
   const navigate = useNavigate()
-  const { items, mealPlan, isOnline, fetchMealPlanSuggestions, confirmMealPlan } = useStore()
+  const {
+    items,
+    categories,
+    recurringItems,
+    mealPlan,
+    isOnline,
+    fetchMealPlanSuggestions,
+    fetchRecurringItems,
+    confirmMealPlan,
+  } = useStore()
 
   const draft = readDraft()
   const [step, setStep] = useState(draft?.step ?? 'intro')
@@ -31,8 +51,13 @@ export default function MealPlanWizard() {
   const [pool, setPool] = useState(draft?.pool ?? [])
   const [skipped, setSkipped] = useState(() => new Set(draft?.skipped ?? []))
   const [rejected, setRejected] = useState(() => new Set(draft?.rejected ?? []))
+  const [pickedRecurring, setPickedRecurring] = useState(() => new Set(draft?.pickedRecurring ?? []))
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
+
+  useEffect(() => {
+    fetchRecurringItems()
+  }, [fetchRecurringItems])
 
   // Persist enough to resume mid-wizard after a refresh.
   useEffect(() => {
@@ -42,9 +67,17 @@ export default function MealPlanWizard() {
     }
     sessionStorage.setItem(
       DRAFT_KEY,
-      JSON.stringify({ step, count, selected, pool, skipped: [...skipped], rejected: [...rejected] })
+      JSON.stringify({
+        step,
+        count,
+        selected,
+        pool,
+        skipped: [...skipped],
+        rejected: [...rejected],
+        pickedRecurring: [...pickedRecurring],
+      })
     )
-  }, [step, count, selected, pool, skipped, rejected])
+  }, [step, count, selected, pool, skipped, rejected, pickedRecurring])
 
   const load = async (wanted) => {
     setBusy(true)
@@ -54,6 +87,7 @@ export default function MealPlanWizard() {
       setPool(fresh)
       setSkipped(new Set())
       setRejected(new Set())
+      setPickedRecurring(new Set())
       setStep('suggestions')
     } catch {
       // The error message lives in the store and is rendered below.
@@ -79,17 +113,16 @@ export default function MealPlanWizard() {
     if (extra) setSelected([...selected, extra])
   }
 
-  const review = buildReviewList(selected, items)
+  const recurringOptions = sortRecurring(recurringItems, categories)
+  const hasRecurring = recurringOptions.length > 0
+  const isOnList = onListChecker(items)
+  const picked = recurringOptions.filter((r) => pickedRecurring.has(r.id))
+
+  const review = buildReviewList(selected, items, picked)
   const included = review.filter((entry) => !skipped.has(entry.key))
 
-  const toggleIngredient = (key) => {
-    setSkipped((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }
+  const toggleIngredient = (key) => setSkipped((prev) => toggleInSet(prev, key))
+  const toggleRecurring = (id) => setPickedRecurring((prev) => toggleInSet(prev, id))
 
   const confirm = async () => {
     setBusy(true)
@@ -97,7 +130,8 @@ export default function MealPlanWizard() {
       const excluded = review
         .filter((entry) => skipped.has(entry.key))
         .flatMap((entry) => entry.ingredientIds)
-      const res = await confirmMealPlan(selected.map((r) => r.id), excluded)
+      const recurringIds = included.flatMap((entry) => entry.recurringIds)
+      const res = await confirmMealPlan(selected.map((r) => r.id), excluded, recurringIds)
       setResult(res)
       setStep('done')
     } catch (err) {
@@ -230,19 +264,69 @@ export default function MealPlanWizard() {
           </div>
 
           <button
-            onClick={() => setStep('review')}
+            onClick={() => setStep(hasRecurring ? 'recurring' : 'review')}
             disabled={selected.length === 0}
             className="w-full py-3 rounded-xl bg-amber-500 dark:bg-amber-600 text-white font-semibold disabled:opacity-40"
           >
-            Review ingredients
+            {hasRecurring ? 'Next' : 'Review ingredients'}
           </button>
+        </div>
+      )}
+
+      {step === 'recurring' && !busy && (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-500 dark:text-slate-400">
+            Tick the recurring items you need this week.
+          </p>
+
+          {recurringOptions.map((recurring) => (
+            <label
+              key={recurring.id}
+              className="flex items-start gap-3 bg-white dark:bg-slate-800 rounded-xl border border-gray-100 dark:border-slate-700 p-3"
+            >
+              <input
+                type="checkbox"
+                checked={pickedRecurring.has(recurring.id)}
+                onChange={() => toggleRecurring(recurring.id)}
+                className="mt-1 w-4 h-4 accent-amber-500"
+              />
+              <span className="min-w-0">
+                <span className="block text-gray-900 dark:text-slate-100">
+                  {recurring.name}
+                  {recurring.amount && (
+                    <span className="text-gray-500 dark:text-slate-400"> ({recurring.amount})</span>
+                  )}
+                </span>
+                {isOnList(recurring.name) && (
+                  <span className="block text-xs text-gray-500 dark:text-slate-400">
+                    already on the list
+                  </span>
+                )}
+              </span>
+            </label>
+          ))}
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => setStep('suggestions')}
+              className="flex-1 py-3 rounded-xl border border-gray-200 dark:border-slate-700 font-medium text-gray-700 dark:text-slate-300"
+            >
+              Back
+            </button>
+            <button
+              onClick={() => setStep('review')}
+              className="flex-1 py-3 rounded-xl bg-amber-500 dark:bg-amber-600 text-white font-semibold"
+            >
+              Review ingredients
+            </button>
+          </div>
         </div>
       )}
 
       {step === 'review' && !busy && (
         <div className="space-y-3">
           <p className="text-sm text-gray-500 dark:text-slate-400">
-            {included.length} of {review.length} ingredients will be added.
+            {included.length} of {review.length} items will be added.
           </p>
 
           {review.map((entry) => (
@@ -264,7 +348,7 @@ export default function MealPlanWizard() {
                   )}
                 </span>
                 <span className="block text-xs text-gray-500 dark:text-slate-400">
-                  {entry.recipeNames.join(', ')}
+                  {reviewSources(entry)}
                   {entry.onList && ' · already on the list'}
                 </span>
               </span>
@@ -273,7 +357,7 @@ export default function MealPlanWizard() {
 
           <div className="flex gap-2">
             <button
-              onClick={() => setStep('suggestions')}
+              onClick={() => setStep(hasRecurring ? 'recurring' : 'suggestions')}
               className="flex-1 py-3 rounded-xl border border-gray-200 dark:border-slate-700 font-medium text-gray-700 dark:text-slate-300"
             >
               Back
@@ -294,7 +378,7 @@ export default function MealPlanWizard() {
           <p className="text-lg font-semibold text-gray-900 dark:text-slate-100">
             {result?.queued
               ? 'Saved. Your dinners will be added once you are back online.'
-              : `${result?.itemsAdded ?? 0} ingredients added to your list.`}
+              : `${result?.itemsAdded ?? 0} items added to your list.`}
           </p>
           <Link
             to="/"

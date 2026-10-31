@@ -37,6 +37,15 @@ function seedRecipe({ name, isRegular = true, lastPlannedAt = null, ingredients 
   return id;
 }
 
+/** Create a recurring item directly. */
+function seedRecurring(name, amount = null) {
+  return Number(
+    getDatabase()
+      .prepare('INSERT INTO recurring_items (name, amount) VALUES (?, ?)')
+      .run(name, amount).lastInsertRowid
+  );
+}
+
 describe('GET /api/mealplan/suggestions', () => {
   it('suggests regular recipes with their ingredients', async () => {
     seedRecipe({ name: 'Chilli' });
@@ -129,6 +138,61 @@ describe('POST /api/mealplan/confirm', () => {
     const db = getDatabase();
     expect(db.prepare('SELECT COUNT(*) as n FROM items').get().n).toBe(0);
     expect(db.prepare('SELECT COUNT(*) as n FROM recipe_plan_history').get().n).toBe(0);
+  });
+
+  it('adds chosen recurring items marked as recurring', async () => {
+    const recipe = seedRecipe({ name: 'Chilli', ingredients: ['Beans'] });
+    const milk = seedRecurring('Milk', '2L');
+    seedRecurring('Bread');
+
+    const res = await request(app)
+      .post('/api/mealplan/confirm')
+      .send({ recipeIds: [recipe], recurringItemIds: [milk] });
+
+    expect(res.status).toBe(201);
+    expect(res.body.itemsAdded).toBe(2);
+    const added = res.body.items.find((i) => i.name === 'Milk');
+    expect(added).toMatchObject({ amount: '2L', is_recurring: 1, recipe_id: null });
+    expect(res.body.items.find((i) => i.name === 'Beans').is_recurring).toBe(0);
+  });
+
+  it('places a recurring item next to an unchecked duplicate', async () => {
+    const recipe = seedRecipe({ name: 'Chilli', ingredients: ['Beans'] });
+    insertItem({ name: 'Milk', position_in_list: 5 });
+    const milk = seedRecurring('milk');
+
+    const res = await request(app)
+      .post('/api/mealplan/confirm')
+      .send({ recipeIds: [recipe], recurringItemIds: [milk] });
+
+    expect(res.body.items.find((i) => i.name === 'milk').position_in_list).toBe(5);
+  });
+
+  it('skips recurring items that no longer exist', async () => {
+    const recipe = seedRecipe({ name: 'Chilli', ingredients: ['Beans'] });
+
+    const res = await request(app)
+      .post('/api/mealplan/confirm')
+      .send({ recipeIds: [recipe], recurringItemIds: [999] });
+
+    expect(res.status).toBe(201);
+    expect(res.body.itemsAdded).toBe(1);
+  });
+
+  it('still requires at least one dinner', async () => {
+    const milk = seedRecurring('Milk');
+    const res = await request(app)
+      .post('/api/mealplan/confirm')
+      .send({ recipeIds: [], recurringItemIds: [milk] });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects non-numeric recurring ids', async () => {
+    const recipe = seedRecipe({ name: 'Chilli' });
+    const res = await request(app)
+      .post('/api/mealplan/confirm')
+      .send({ recipeIds: [recipe], recurringItemIds: ['abc'] });
+    expect(res.status).toBe(400);
   });
 
   it('rejects an empty selection', async () => {

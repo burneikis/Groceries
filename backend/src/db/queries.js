@@ -44,3 +44,23 @@ export const SELECT_RECIPE_INGREDIENTS = `
   WHERE recipe_id = ?
   ORDER BY position ASC
 `;
+
+/** Recurring items with category info, in category order then by name. */
+const RECURRING_SELECT = `
+  SELECT
+    recurring_items.*,
+    categories.name as category_name,
+    categories.sort_order as category_sort_order
+  FROM recurring_items
+  LEFT JOIN categories ON recurring_items.category_id = categories.id
+`;
+
+export const SELECT_ALL_RECURRING = `
+  ${RECURRING_SELECT}
+  ORDER BY
+    CASE WHEN categories.sort_order IS NULL THEN 1 ELSE 0 END,
+    categories.sort_order ASC,
+    recurring_items.name COLLATE NOCASE ASC
+`;
+
+export const SELECT_RECURRING_BY_ID = `${RECURRING_SELECT} WHERE recurring_items.id = ?`;

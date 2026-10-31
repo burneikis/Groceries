@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildReviewList, lastCookedLabel, nextFromPool } from './mealPlanUtils';
+import { buildReviewList, lastCookedLabel, nextFromPool, reviewSources } from './mealPlanUtils';
 
 const now = new Date('2024-06-10T12:00:00Z');
 const daysAgo = (n) => new Date(now.getTime() - n * 86400000).toISOString();
@@ -38,6 +38,32 @@ describe('buildReviewList', () => {
       amounts: ['400g', '200g'],
     });
     expect(mince.recipeNames).toEqual(['Chilli']);
+  });
+
+  it('merges plural and singular spellings', () => {
+    const list = buildReviewList([
+      { name: 'Salad', ingredients: [{ id: 1, name: 'Tomatoes' }] },
+      { name: 'Pasta', ingredients: [{ id: 2, name: 'tomato' }] },
+    ]);
+    expect(list).toHaveLength(1);
+    expect(list[0].ingredientIds).toEqual([1, 2]);
+  });
+
+  it('merges recurring items into matching ingredients and adds the rest', () => {
+    const [beans, , milk] = buildReviewList(recipes, [], [
+      { id: 7, name: 'Bean', amount: '1 can' },
+      { id: 8, name: 'Milk' },
+    ]);
+
+    expect(beans).toMatchObject({ recurringIds: [7], amounts: ['400g', '200g', '1 can'] });
+    expect(reviewSources(beans)).toBe('Chilli, Curry, Recurring');
+    expect(milk).toMatchObject({ name: 'Milk', recurringIds: [8], ingredientIds: [], recipeNames: [] });
+    expect(reviewSources(milk)).toBe('Recurring');
+  });
+
+  it('ignores checked list items when flagging duplicates', () => {
+    const [beans] = buildReviewList(recipes, [{ name: 'Beans', checked: 1 }]);
+    expect(beans.onList).toBe(false);
   });
 
   it('flags ingredients already on the list', () => {

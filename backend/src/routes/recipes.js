@@ -5,6 +5,7 @@ import { getSuggestedCategory } from '../services/categorization.js';
 import { propagateCategory } from '../services/categorySync.js';
 import { insertRecipeItems, loadItems, stampPlanned } from '../services/mealplan.js';
 import eventEmitter from '../services/events.js';
+import { emitRecurringUpdates } from '../services/recurring.js';
 import { badRequest, handler, notFound } from '../utils/http.js';
 
 const router = express.Router();
@@ -158,6 +159,7 @@ router.put('/:id', handler('updating recipe', (req, res) => {
     const stored = db.prepare('SELECT * FROM recipe_ingredients WHERE recipe_id = ?').all(id);
     const itemIds = new Set(syncRecipeItems(db, id, stored));
     const recipeIds = new Set();
+    const recurringIds = new Set();
 
     // A category is a property of the name, so share it with duplicate list
     // items and any other recipe using the same ingredient.
@@ -169,9 +171,10 @@ router.put('/:id', handler('updating recipe', (req, res) => {
       });
       fanOut.itemIds.forEach((itemId) => itemIds.add(itemId));
       fanOut.recipeIds.forEach((recipeId) => recipeIds.add(recipeId));
+      fanOut.recurringIds.forEach((recurringId) => recurringIds.add(recurringId));
     }
 
-    return { itemIds: [...itemIds], recipeIds: [...recipeIds] };
+    return { itemIds: [...itemIds], recipeIds: [...recipeIds], recurringIds: [...recurringIds] };
   })();
 
   const updatedRecipe = getRecipeWithIngredients(db, id);
@@ -181,6 +184,7 @@ router.put('/:id', handler('updating recipe', (req, res) => {
     .filter(Boolean)
     .forEach((recipe) => eventEmitter.emitChange('recipe-updated', recipe, changeId));
   loadItems(db, synced.itemIds).forEach((item) => eventEmitter.emitChange('item-updated', item, changeId));
+  emitRecurringUpdates(db, synced.recurringIds, changeId);
   res.json(updatedRecipe);
 }));
 

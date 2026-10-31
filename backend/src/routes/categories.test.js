@@ -142,6 +142,17 @@ describe('DELETE /api/categories/:id', () => {
     expect(items[0]).toMatchObject({ id, name: 'Milk', category_id: null });
   });
 
+  it('detaches recurring items that referenced it', async () => {
+    const { body: milk } = await request(app)
+      .post('/api/recurring')
+      .send({ name: 'Milk', category_id: 8 });
+
+    await request(app).delete('/api/categories/8');
+
+    const [recurring] = (await request(app).get('/api/recurring')).body;
+    expect(recurring).toMatchObject({ id: milk.id, category_id: null });
+  });
+
   it('detaches recipe ingredients that referenced it', async () => {
     const { body: recipe } = await request(app)
       .post('/api/recipes')

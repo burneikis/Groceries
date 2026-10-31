@@ -171,6 +171,9 @@ export default function ItemRow({ item, categoryItemCount = 1, draggable = false
         {item.recipe_name && (
           <p className="text-xs text-gray-300 dark:text-slate-600 truncate">for {item.recipe_name}</p>
         )}
+        {!!item.is_recurring && (
+          <p className="text-xs text-gray-300 dark:text-slate-600 truncate">recurring</p>
+        )}
       </div>
 
       <button

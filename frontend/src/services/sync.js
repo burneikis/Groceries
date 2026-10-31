@@ -1,5 +1,13 @@
 import { addToSyncQueue, getSyncQueue, removeSyncEntry, updateSyncEntry } from './db';
-import { ApiError, NetworkError, categoriesApi, itemsApi, mealPlanApi, recipesApi } from './api';
+import {
+  ApiError,
+  NetworkError,
+  categoriesApi,
+  itemsApi,
+  mealPlanApi,
+  recipesApi,
+  recurringApi,
+} from './api';
 
 /**
  * Number of times a queued mutation is retried before it is discarded.
@@ -87,9 +95,23 @@ const ACTIONS = {
     run: (d, changeId) => recipesApi.setRegular(d.id, d.isRegular, changeId),
     refs: ['id'],
   },
+  'recurring.create': {
+    run: (d, changeId) => recurringApi.create(d.recurring, changeId),
+    refs: ['recurring.category_id'],
+    creates: true,
+  },
+  'recurring.update': {
+    run: (d, changeId) => recurringApi.update(d.id, d.recurring, changeId),
+    refs: ['id', 'recurring.category_id'],
+  },
+  'recurring.delete': {
+    run: (d, changeId) => recurringApi.delete(d.id, changeId),
+    refs: ['id'],
+  },
   'mealplan.confirm': {
-    run: (d, changeId) => mealPlanApi.confirm(d.recipeIds, d.excludedIngredientIds, changeId),
-    refs: ['recipeIds[]'],
+    run: (d, changeId) =>
+      mealPlanApi.confirm(d.recipeIds, d.excludedIngredientIds, d.recurringItemIds ?? [], changeId),
+    refs: ['recipeIds[]', 'recurringItemIds[]'],
   },
 };
 

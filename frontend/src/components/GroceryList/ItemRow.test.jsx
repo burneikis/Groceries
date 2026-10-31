@@ -70,6 +70,16 @@ describe('display', () => {
     expect(screen.getByText('for Pancakes')).toBeInTheDocument();
   });
 
+  it('marks items added as recurring', () => {
+    renderRow({ item: item({ is_recurring: 1 }) });
+    expect(screen.getByText('recurring')).toBeInTheDocument();
+  });
+
+  it('shows no recurring marker on ordinary items', () => {
+    renderRow({ item: item({ is_recurring: 0 }) });
+    expect(screen.queryByText('recurring')).not.toBeInTheDocument();
+  });
+
   it('strikes through a checked item', () => {
     renderRow({ item: item({ checked: 1 }) });
     expect(screen.getByText('Milk').className).toContain('line-through');

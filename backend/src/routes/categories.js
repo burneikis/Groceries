@@ -104,6 +104,7 @@ router.delete('/:id', handler('deleting category', (req, res) => {
   const result = db.transaction(() => {
     db.prepare('UPDATE items SET category_id = NULL WHERE category_id = ?').run(id);
     db.prepare('UPDATE recipe_ingredients SET category_id = NULL WHERE category_id = ?').run(id);
+    db.prepare('UPDATE recurring_items SET category_id = NULL WHERE category_id = ?').run(id);
     db.prepare('DELETE FROM item_category_mappings WHERE category_id = ?').run(id);
     return db.prepare('DELETE FROM categories WHERE id = ?').run(id);
   })();

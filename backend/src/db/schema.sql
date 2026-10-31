@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS items (
   position_in_list INTEGER,
   recipe_id INTEGER,
   recipe_name TEXT,
+  is_recurring BOOLEAN DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (category_id) REFERENCES categories(id)
@@ -51,6 +52,18 @@ CREATE TABLE IF NOT EXISTS recipe_ingredients (
   category_id INTEGER,
   position INTEGER,
   FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE,
+  FOREIGN KEY (category_id) REFERENCES categories(id)
+);
+
+-- Recurring items (milk, bread, ...): offered in the dinner wizard and added
+-- to the list as ordinary items marked `is_recurring`.
+CREATE TABLE IF NOT EXISTS recurring_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  description TEXT,
+  amount TEXT,
+  category_id INTEGER,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (category_id) REFERENCES categories(id)
 );
 

@@ -94,33 +94,71 @@ export function insertRecipeItems(db, recipeId, { startPosition, ingredients } =
   if (rows.length === 0) return [];
 
   const recipe = db.prepare('SELECT name FROM recipes WHERE id = ?').get(recipeId);
+  return insertListItems(db, rows, {
+    startPosition,
+    recipeId: parseInt(recipeId, 10),
+    recipeName: recipe?.name || null,
+  });
+}
+
+/**
+ * Insert recurring items as grocery items marked `is_recurring`.
+ * Assumes an open transaction.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {object[]} rows - recurring_items rows
+ * @param {object} [options]
+ * @param {number} [options.startPosition] - First position_in_list to use
+ * @returns {number[]} ids of the inserted items
+ */
+export function insertRecurringItems(db, rows, { startPosition } = {}) {
+  return insertListItems(db, rows, { startPosition, isRecurring: true });
+}
+
+/**
+ * Insert template rows (recipe ingredients or recurring items) as list items,
+ * placing each next to any unchecked duplicate and learning its category.
+ * Assumes an open transaction.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {object[]} rows - { name, description, amount, category_id }
+ * @param {object} source
+ * @param {number} [source.startPosition]
+ * @param {number|null} [source.recipeId]
+ * @param {string|null} [source.recipeName]
+ * @param {boolean} [source.isRecurring]
+ * @returns {number[]} ids of the inserted items
+ */
+function insertListItems(db, rows, { startPosition, recipeId = null, recipeName = null, isRecurring = false }) {
   const insertItem = db.prepare(`
-    INSERT INTO items (name, description, amount, category_id, position_in_list, checked, recipe_id, recipe_name)
-    VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+    INSERT INTO items
+      (name, description, amount, category_id, position_in_list, checked, recipe_id, recipe_name, is_recurring)
+    VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
   `);
 
   let nextPosition = startPosition ?? nextItemPosition(db);
 
-  return rows.map((ing) => {
-    const { position, categoryId } = placeItem(db, ing.name, ing.category_id || null, {
+  return rows.map((row) => {
+    const { position, categoryId } = placeItem(db, row.name, row.category_id || null, {
       fallbackPosition: nextPosition,
-      preferGivenCategory: Boolean(ing.category_id)
+      preferGivenCategory: Boolean(row.category_id)
     });
     if (position === nextPosition) nextPosition++;
 
     const result = insertItem.run(
-      ing.name,
-      ing.description || null,
-      ing.amount || null,
+      row.name,
+      row.description || null,
+      row.amount || null,
       categoryId,
       position,
-      parseInt(recipeId, 10),
-      recipe?.name || null
+      recipeId,
+      recipeName,
+      isRecurring ? 1 : 0
     );
-    if (ing.category_id) {
-      learnCategoryMapping(ing.name, ing.category_id);
+    if (row.category_id) {
+      learnCategoryMapping(row.name, row.category_id);
     }
-    return result.lastInsertRowid;
+    return Number(result.lastInsertRowid);
   });
 }
 

@@ -17,6 +17,7 @@ vi.mock('../services/api', async (importOriginal) => {
       'getAll', 'create', 'update', 'delete', 'addToList', 'removeFromList', 'setRegular',
     ]),
     mealPlanApi: stub(['getSuggestions', 'confirm']),
+    recurringApi: stub(['getAll', 'create', 'update', 'delete']),
   };
 });
 
@@ -25,6 +26,7 @@ let categoriesApi;
 let itemsApi;
 let recipesApi;
 let mealPlanApi;
+let recurringApi;
 let db;
 
 /** Fresh store + IndexedDB for every test. */
@@ -33,7 +35,7 @@ beforeEach(async () => {
   vi.resetModules();
   vi.clearAllMocks();
 
-  ({ categoriesApi, itemsApi, recipesApi, mealPlanApi } = await import('../services/api'));
+  ({ categoriesApi, itemsApi, recipesApi, mealPlanApi, recurringApi } = await import('../services/api'));
   db = await import('../services/db');
   useStore = (await import('./useStore')).default;
 
@@ -545,13 +547,91 @@ describe('meal plan', () => {
   it('queues the confirmation when offline', async () => {
     mealPlanApi.confirm.mockRejectedValue(offline());
 
-    const result = await state().confirmMealPlan([1, 2], [3]);
+    const result = await state().confirmMealPlan([1, 2], [3], [7]);
 
     expect(result.queued).toBe(true);
     expect((await db.getSyncQueue())[0]).toMatchObject({
       action: 'mealplan.confirm',
-      data: { recipeIds: [1, 2], excludedIngredientIds: [3] },
+      data: { recipeIds: [1, 2], excludedIngredientIds: [3], recurringItemIds: [7] },
     });
+  });
+
+  it('sends the picked recurring items with the confirmation', async () => {
+    mealPlanApi.confirm.mockResolvedValue({ itemsAdded: 0, items: [], recipes: [] });
+
+    await state().confirmMealPlan([1], [], [7, 8]);
+
+    expect(mealPlanApi.confirm).toHaveBeenCalledWith([1], [], [7, 8], expect.any(String));
+  });
+});
+
+describe('recurring items', () => {
+  const milk = { id: 1, name: 'Milk', amount: null, category_id: 8 };
+
+  it('fetches and caches recurring items, falling back to the cache offline', async () => {
+    recurringApi.getAll.mockResolvedValue([milk]);
+    await state().fetchRecurringItems();
+    expect(state().recurringItems).toEqual([milk]);
+
+    useStore.setState({ recurringItems: [] });
+    recurringApi.getAll.mockRejectedValue(offline());
+    await state().fetchRecurringItems();
+    expect(state().recurringItems).toEqual([milk]);
+  });
+
+  it('creates, updates and deletes against the server', async () => {
+    recurringApi.create.mockResolvedValue(milk);
+    await state().createRecurringItem({ name: 'Milk', category_id: 8 });
+    expect(state().recurringItems).toEqual([milk]);
+
+    recurringApi.update.mockResolvedValue({ ...milk, amount: '2L' });
+    await state().updateRecurringItem(1, { name: 'Milk', amount: '2L', category_id: 8 });
+    expect(state().recurringItems[0].amount).toBe('2L');
+
+    recurringApi.delete.mockResolvedValue(null);
+    await state().deleteRecurringItem(1);
+    expect(state().recurringItems).toEqual([]);
+    expect(await db.getRecurringItems()).toEqual([]);
+  });
+
+  it('queues a recurring item created offline with a temp id', async () => {
+    recurringApi.create.mockRejectedValue(offline());
+
+    const created = await state().createRecurringItem({ name: 'Bread' });
+
+    expect(created.id).toBeLessThan(0);
+    expect(state().recurringItems[0].name).toBe('Bread');
+    expect((await db.getSyncQueue())[0]).toMatchObject({
+      action: 'recurring.create',
+      data: { recurring: { name: 'Bread' } },
+      tempId: created.id,
+    });
+  });
+
+  it('surfaces a server rejection instead of queueing it', async () => {
+    recurringApi.create.mockRejectedValue(new ApiError(409, '"Milk" is already a recurring item'));
+
+    await expect(state().createRecurringItem({ name: 'milk' })).rejects.toThrow(/already/);
+    expect(await db.getSyncQueue()).toHaveLength(0);
+  });
+
+  it('applies remote recurring changes', async () => {
+    await state().handleRemoteChange({ type: 'recurring-created', data: milk });
+    expect(state().recurringItems).toEqual([milk]);
+
+    await state().handleRemoteChange({ type: 'recurring-updated', data: { ...milk, category_id: 3 } });
+    expect(state().recurringItems[0].category_id).toBe(3);
+
+    await state().handleRemoteChange({ type: 'recurring-deleted', data: { id: 1 } });
+    expect(state().recurringItems).toEqual([]);
+  });
+
+  it('uncategorises recurring items when their category is deleted', async () => {
+    useStore.setState({ categories: [{ id: 8, name: 'Dairy' }], recurringItems: [milk] });
+
+    await state().handleRemoteChange({ type: 'category-deleted', data: { id: 8 } });
+
+    expect(state().recurringItems[0].category_id).toBeNull();
   });
 });
 
@@ -758,6 +838,7 @@ describe('offline support lifecycle', () => {
     itemsApi.getAll.mockResolvedValue([{ id: 1, name: 'Milk' }]);
     categoriesApi.getAll.mockResolvedValue([]);
     recipesApi.getAll.mockResolvedValue([]);
+    recurringApi.getAll.mockResolvedValue([]);
 
     const cleanup = state().initOfflineSupport();
     window.dispatchEvent(new Event('online'));

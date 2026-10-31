@@ -8,6 +8,7 @@ A full-stack Progressive Web App for managing shared grocery lists with offline 
 - **Smart Categorization**: Learns from your usage to auto-categorize items
 - **Recipe Management**: Store recipes and add ingredients to your list in one tap
 - **"What's for dinner?" Wizard**: Weekly dinner plan drawn from your regular recipes, favouring ones you have not cooked recently
+- **Recurring Items**: Configure regulars like milk and bread in Settings; the dinner wizard offers them as a tick list and marks them "recurring" on the list
 - **Offline First**: Works without internet connection using IndexedDB
 - **PWA**: Install on mobile and desktop devices
 - **Drag & Drop**: Reorder categories and items
@@ -147,7 +148,13 @@ Groceries/
 
 ### Meal plan
 - `GET /api/mealplan/suggestions?count=4` - Suggested dinners plus the full pool of regulars
-- `POST /api/mealplan/confirm` - Add the chosen dinners' ingredients to the list and record the plan
+- `POST /api/mealplan/confirm` - Add the chosen dinners' ingredients (and any `recurringItemIds`) to the list and record the plan
+
+### Recurring items
+- `GET /api/recurring` - All recurring items, in category order then by name
+- `POST /api/recurring` - Create a recurring item (name must be unique, ignoring case and plurals)
+- `PUT /api/recurring/:id` - Update a recurring item
+- `DELETE /api/recurring/:id` - Delete a recurring item
 
 ## Environment Variables
 
@@ -191,6 +198,7 @@ The backend uses SQLite with the following tables:
 - **recipes** - Recipe names, regular-dinner flag and plan recency
 - **recipe_ingredients** - Ingredients for each recipe
 - **recipe_plan_history** - Log of dinners picked in the wizard
+- **recurring_items** - Recurring items offered in the dinner wizard
 - **item_category_mappings** - Learning table for auto-categorization
 
 The database is automatically initialized on first run with foreign key constraints enabled. All queries use prepared statements for SQL injection prevention.

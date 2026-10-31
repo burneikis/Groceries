@@ -60,6 +60,10 @@ const MIGRATIONS = [
       )
     `);
   },
+  // recurring_items itself is created by schema.sql (CREATE TABLE IF NOT EXISTS).
+  (database) => {
+    database.exec('ALTER TABLE items ADD COLUMN is_recurring BOOLEAN DEFAULT 0');
+  },
 ];
 
 /**

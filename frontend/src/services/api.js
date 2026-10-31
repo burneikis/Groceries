@@ -126,11 +126,28 @@ export const recipesApi = {
   }),
 };
 
+// Recurring items (offered in the dinner wizard)
+export const recurringApi = {
+  getAll: () => request('/recurring'),
+  create: (recurring, changeId) => request('/recurring', {
+    method: 'POST',
+    body: JSON.stringify({ ...recurring, changeId }),
+  }),
+  update: (id, recurring, changeId) => request(`/recurring/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ ...recurring, changeId }),
+  }),
+  delete: (id, changeId) => request(`/recurring/${id}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ changeId }),
+  }),
+};
+
 // Weekly dinner plan
 export const mealPlanApi = {
   getSuggestions: (count) => request(`/mealplan/suggestions?count=${count}`),
-  confirm: (recipeIds, excludedIngredientIds, changeId) => request('/mealplan/confirm', {
+  confirm: (recipeIds, excludedIngredientIds, recurringItemIds, changeId) => request('/mealplan/confirm', {
     method: 'POST',
-    body: JSON.stringify({ recipeIds, excludedIngredientIds, changeId }),
+    body: JSON.stringify({ recipeIds, excludedIngredientIds, recurringItemIds, changeId }),
   }),
 };

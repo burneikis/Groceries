@@ -1,3 +1,5 @@
+import { normalizeName } from '../../utils/names'
+
 /** sessionStorage key for an in-progress wizard, so a refresh is survivable. */
 export const DRAFT_KEY = 'mealplan_draft'
 
@@ -23,36 +25,74 @@ export function lastCookedLabel(lastPlannedAt, now = new Date()) {
 }
 
 /**
- * Merge the ingredients of the chosen recipes into a review list, one entry per
- * distinct (lowercased) ingredient name.
+ * Predicate for "this name is already on the list": an unchecked item with the
+ * same name (case- and plural-insensitive). Checked items are already bought.
+ * @param {object[]} items - Current grocery list items
+ * @returns {(name: string) => boolean}
+ */
+export function onListChecker(items = []) {
+  const listed = new Set(items.filter((i) => !i.checked).map((i) => normalizeName(i.name)))
+  return (name) => listed.has(normalizeName(name))
+}
+
+/**
+ * Merge the ingredients of the chosen recipes and the picked recurring items
+ * into a review list, one entry per distinct item name (case- and
+ * plural-insensitive). A recurring item that matches an ingredient joins that
+ * entry, so one checkbox covers both.
  *
  * @param {object[]} recipes - Selected recipes, each with `ingredients`
  * @param {object[]} items - Current grocery list items
- * @returns {Array<{key: string, name: string, amounts: string[], ingredientIds: number[], recipeNames: string[], onList: boolean}>}
+ * @param {object[]} [recurring] - Recurring items picked in the wizard
+ * @returns {Array<{key: string, name: string, amounts: string[], ingredientIds: number[], recurringIds: number[], recipeNames: string[], onList: boolean}>}
  */
-export function buildReviewList(recipes, items = []) {
-  const onList = new Set(items.map((i) => i.name.trim().toLowerCase()))
+export function buildReviewList(recipes, items = [], recurring = []) {
+  const isOnList = onListChecker(items)
   const merged = new Map()
+
+  const entryFor = (rawName) => {
+    const key = normalizeName(rawName)
+    if (!merged.has(key)) {
+      merged.set(key, {
+        key,
+        name: rawName.trim(),
+        amounts: [],
+        ingredientIds: [],
+        recurringIds: [],
+        recipeNames: [],
+        onList: isOnList(rawName),
+      })
+    }
+    return merged.get(key)
+  }
 
   recipes.forEach((recipe) => {
     ;(recipe.ingredients ?? []).forEach((ing) => {
-      const key = ing.name.trim().toLowerCase()
-      const entry = merged.get(key) ?? {
-        key,
-        name: ing.name.trim(),
-        amounts: [],
-        ingredientIds: [],
-        recipeNames: [],
-        onList: onList.has(key),
-      }
+      const entry = entryFor(ing.name)
       if (ing.amount) entry.amounts.push(ing.amount)
       entry.ingredientIds.push(ing.id)
       if (!entry.recipeNames.includes(recipe.name)) entry.recipeNames.push(recipe.name)
-      merged.set(key, entry)
     })
   })
 
+  recurring.forEach((item) => {
+    const entry = entryFor(item.name)
+    if (item.amount) entry.amounts.push(item.amount)
+    entry.recurringIds.push(item.id)
+  })
+
   return [...merged.values()]
+}
+
+/**
+ * Where a review entry comes from, e.g. "Pancakes, Recurring".
+ * @param {{recipeNames: string[], recurringIds: number[]}} entry
+ * @returns {string}
+ */
+export function reviewSources(entry) {
+  const sources = [...entry.recipeNames]
+  if (entry.recurringIds.length > 0) sources.push('Recurring')
+  return sources.join(', ')
 }
 
 /**

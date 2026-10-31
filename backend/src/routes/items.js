@@ -6,6 +6,7 @@ import eventEmitter from '../services/events.js';
 import { propagateCategory } from '../services/categorySync.js';
 import { placeItem } from '../services/itemPlacement.js';
 import { loadItems } from '../services/mealplan.js';
+import { emitRecurringUpdates } from '../services/recurring.js';
 import { badRequest, handler, notFound } from '../utils/http.js';
 
 const router = express.Router();
@@ -215,6 +216,7 @@ router.put('/:id', handler('updating item', (req, res) => {
     return {
       itemIds: fanOut.itemIds,
       recipeIds: ownRecipeId ? [ownRecipeId, ...fanOut.recipeIds] : fanOut.recipeIds,
+      recurringIds: fanOut.recurringIds,
     };
   })();
 
@@ -231,6 +233,7 @@ router.put('/:id', handler('updating item', (req, res) => {
     .map((recipeId) => recipeWithIngredients(db, recipeId))
     .filter(Boolean)
     .forEach((recipe) => eventEmitter.emitChange('recipe-updated', recipe, changeId));
+  emitRecurringUpdates(db, synced.recurringIds, changeId);
 
   res.json(updatedItem);
 }));

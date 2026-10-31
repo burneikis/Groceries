@@ -1,14 +1,17 @@
 import { useEffect } from 'react'
 import useStore from '../../store/useStore'
 import CategoryManager from './CategoryManager'
+import RecurringManager from './RecurringManager'
 import ThemeSelector from './ThemeSelector'
 
 export default function SettingsView() {
   const fetchCategories = useStore((s) => s.fetchCategories)
+  const fetchRecurringItems = useStore((s) => s.fetchRecurringItems)
 
   useEffect(() => {
     fetchCategories()
-  }, [fetchCategories])
+    fetchRecurringItems()
+  }, [fetchCategories, fetchRecurringItems])
 
   return (
     <div className="max-w-lg mx-auto px-4">
@@ -21,6 +24,13 @@ export default function SettingsView() {
           Appearance
         </h2>
         <ThemeSelector />
+      </section>
+
+      <section className="mb-8">
+        <h2 className="text-sm font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-3">
+          Recurring
+        </h2>
+        <RecurringManager />
       </section>
 
       <section>

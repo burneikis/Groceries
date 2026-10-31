@@ -42,6 +42,9 @@ beforeEach(() => {
 
   useStore.setState({
     items: [],
+    categories: [],
+    recurringItems: [],
+    fetchRecurringItems: vi.fn(),
     isOnline: true,
     mealPlan: { suggestions: [], pool: [], loading: false, error: null },
     fetchMealPlanSuggestions,
@@ -173,7 +176,7 @@ describe('review', () => {
 
     expect(screen.getByText('Beans')).toBeInTheDocument();
     expect(screen.getByText('Chilli, Curry')).toBeInTheDocument();
-    expect(screen.getByText('3 of 3 ingredients will be added.')).toBeInTheDocument();
+    expect(screen.getByText('3 of 3 items will be added.')).toBeInTheDocument();
   });
 
   it('excludes unticked ingredients on confirm', async () => {
@@ -198,8 +201,102 @@ describe('review', () => {
     await user.click(screen.getByRole('button', { name: 'Review ingredients' }));
     await user.click(screen.getByRole('button', { name: 'Add to list' }));
 
-    expect(await screen.findByText('3 ingredients added to your list.')).toBeInTheDocument();
+    expect(await screen.findByText('3 items added to your list.')).toBeInTheDocument();
     expect(sessionStorage.getItem('mealplan_draft')).toBeNull();
+  });
+});
+
+describe('recurring', () => {
+  const milk = { id: 7, name: 'Milk', amount: '2L', category_id: null };
+  const bread = { id: 8, name: 'Bread', amount: null, category_id: null };
+
+  /** Land on the recurring step with Milk and Bread configured. */
+  const toRecurring = async (user) => {
+    renderWizard();
+    await start(user);
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+  };
+
+  beforeEach(() => {
+    useStore.setState({ recurringItems: [milk, bread] });
+  });
+
+  it('skips the step when there are no recurring items', async () => {
+    useStore.setState({ recurringItems: [] });
+    const user = userEvent.setup();
+    renderWizard();
+    await start(user);
+
+    expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Review ingredients' }));
+    expect(screen.getByText('3 of 3 items will be added.')).toBeInTheDocument();
+  });
+
+  it('offers every recurring item unticked', async () => {
+    const user = userEvent.setup();
+    await toRecurring(user);
+
+    expect(screen.getByText('Bread')).toBeInTheDocument();
+    expect(screen.getByText('Milk')).toBeInTheDocument();
+    screen.getAllByRole('checkbox').forEach((box) => expect(box).not.toBeChecked());
+  });
+
+  it('flags recurring items already on the list, ignoring checked ones', async () => {
+    useStore.setState({
+      items: [
+        { id: 1, name: 'milk', checked: 0 },
+        { id: 2, name: 'Bread', checked: 1 },
+      ],
+    });
+    const user = userEvent.setup();
+    await toRecurring(user);
+
+    expect(screen.getAllByText('already on the list')).toHaveLength(1);
+  });
+
+  it('adds only the ticked recurring items on confirm', async () => {
+    const user = userEvent.setup();
+    await toRecurring(user);
+
+    await user.click(screen.getByRole('checkbox', { name: /Milk/ }));
+    await user.click(screen.getByRole('button', { name: 'Review ingredients' }));
+
+    expect(screen.getByText('Recurring')).toBeInTheDocument();
+    expect(screen.getByText('4 of 4 items will be added.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Add to list' }));
+    await waitFor(() => expect(confirmMealPlan).toHaveBeenCalled());
+    expect(confirmMealPlan.mock.calls[0][2]).toEqual([7]);
+  });
+
+  it('merges a recurring item into the matching ingredient row', async () => {
+    useStore.setState({ recurringItems: [{ id: 9, name: 'beans', amount: null }] });
+    const user = userEvent.setup();
+    await toRecurring(user);
+
+    await user.click(screen.getByRole('checkbox', { name: /beans/ }));
+    await user.click(screen.getByRole('button', { name: 'Review ingredients' }));
+
+    expect(screen.getByText('Chilli, Curry, Recurring')).toBeInTheDocument();
+    expect(screen.getByText('3 of 3 items will be added.')).toBeInTheDocument();
+
+    // Unticking the merged row drops both the ingredients and the recurring item.
+    await user.click(screen.getAllByRole('checkbox')[0]);
+    await user.click(screen.getByRole('button', { name: 'Add to list' }));
+    await waitFor(() => expect(confirmMealPlan).toHaveBeenCalled());
+    const [, excluded, recurringIds] = confirmMealPlan.mock.calls[0];
+    expect(excluded).toEqual([100, 201]);
+    expect(recurringIds).toEqual([]);
+  });
+
+  it('goes back from review to the recurring step', async () => {
+    const user = userEvent.setup();
+    await toRecurring(user);
+    await user.click(screen.getByRole('button', { name: 'Review ingredients' }));
+
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+
+    expect(screen.getByText('Tick the recurring items you need this week.')).toBeInTheDocument();
   });
 });
 
